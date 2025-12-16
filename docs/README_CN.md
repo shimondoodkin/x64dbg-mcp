@@ -11,7 +11,7 @@
 - **JSON-RPC 2.0 协议**：标准的、与语言无关的接口
 - **HTTP + SSE 通信**：基于 Web 的现代化集成方式，使用服务器发送事件
 - **MCP 协议支持**：兼容模型上下文协议，支持 AI 代理集成
-- **全面的调试 API（63+ 方法）**：
+- **全面的调试 API（69+ 方法）**：
   - 执行控制（运行、暂停、单步、运行到指定地址）
   - 内存读取/写入/搜索/分配
   - 寄存器访问（50+ 寄存器，包括 GPR、SSE、AVX）
@@ -26,37 +26,34 @@
 - **安全性**：基于权限的访问控制
 - **可扩展**：支持自定义方法的插件架构
 
-## v1.1.0 新功能（开发中）
+## v1.0.2 新特性
 
-- 🏗️ **双架构支持**：现已支持 x64dbg 和 x32dbg
-  - 可构建 x64（64位）或 x86（32位）架构版本
-  - 架构感知的寄存器处理（RAX/EAX、RSP/ESP 等）
-  - 独立的插件文件：`x64dbg_mcp.dp64` 和 `x32dbg_mcp.dp32`
-  - 统一的 SDK 和构建系统支持双架构
+- 🐛 **缺陷修复**：修复了自动化测试发现的关键问题
+  - 修复 `breakpoint_toggle` 状态一致性问题
+  - 实现了真正的 `memory_search` 搜索功能
+  - 修复 `memory_get_info` 返回正确的内存区域基址
+  - 修复 `debug_step_over` RIP 同步时序问题
+  - 增强 `dump_detect_oep` 策略验证，提供清晰的错误消息
+  - 添加缺失的诊断字段（`error`、`encoding`、`progress`）
 
-- 🎯 **Dump与脱壳功能**：全面的内存转储和自动脱壳能力
-  - `dump.module`: 转储可执行模块并重建PE结构
-  - `dump.memory_region`: 转储任意内存区域
-  - `dump.auto_unpack`: 自动脱壳并检测OEP
-  - `dump.analyze_module`: 检测加壳器（UPX、ASPack等）
-  - `dump.detect_oep`: 原始入口点检测
-  - `dump.fix_imports`: IAT重建（Scylla风格）
-  - 支持多层壳处理
-  - AI驱动的可自定义脱壳策略
+- 🔧 **构建系统改进**
+  - 双架构构建脚本：一次命令编译 x64 和 x86 两个版本
+  - 统一输出目录（`dist/`），方便管理
+  - 使用 `-j` 标志实现更快的并行编译
+  - 简化的构建选项：`--clean`、`--x64-only`、`--x86-only`
 
-- ✨ **脚本执行 API**：以编程方式执行 x64dbg 命令
-  - `script.execute`：运行单个 x64dbg 命令
-  - `script.execute_batch`：执行多个命令并支持错误处理
-  - `script.get_last_result`：获取最后一次命令执行结果
+- 📚 **文档清理**
+  - 删除冗余的技术文档
+  - 精简核心文档
 
-- 🔍 **上下文快照 API**：捕获和比较调试状态
-  - `context.get_snapshot`：完整的调试上下文快照
-  - `context.get_basic`：快速的寄存器 + 状态快照
-  - `context.compare_snapshots`：比较两个快照以找出差异
+## 历史版本
 
-- 📊 **增强的自动化**：结合脚本和快照实现强大的工作流
+### v1.0.1
 
-详细功能说明和示例请参见 [UPDATE_CN.md](../UPDATE_CN.md)。
+- 线程和调用栈管理 API
+- 增强的错误处理和日志系统
+
+完整的版本历史请参见 [CHANGELOG_CN.md](../CHANGELOG_CN.md)
 
 ## 从源码构建
 
@@ -77,33 +74,39 @@
 git clone https://github.com/SetsunaYukiOvO/x64dbg-mcp.git
 cd x64dbg-mcp
 
-# 构建 x64 版本（64位 x64dbg）- 默认
+# 同时构建 x64 和 x86 两个版本（推荐）
 .\build.bat
 
-# 构建 x86 版本（32位 x32dbg）
-.\build.bat --arch x86
+# 仅构建 x64 版本
+.\build.bat --x64-only
+
+# 仅构建 x86 版本
+.\build.bat --x86-only
+
+# 清理重新构建
+.\build.bat --clean
 
 # 脚本将自动：
-# 1. 检测或安装 vcpkg
+# 1. 检测 vcpkg 安装
 # 2. 下载依赖项 (nlohmann_json)
-# 3. 为所选架构配置 CMake
-# 4. 使用 Visual Studio 构建
-# 5. 可选：安装到 x64dbg/x32dbg 插件目录
+# 3. 为两个架构配置 CMake
+# 4. 使用 Visual Studio 并行编译
+# 5. 将输出文件复制到 dist/ 目录
 ```
 
 构建脚本选项：
 ```powershell
-.\build.bat               # x64 Release 构建（默认）
-.\build.bat --arch x86    # 构建 x86（32位）版本
-.\build.bat --arch x64    # 构建 x64（64位）版本
-.\build.bat --debug       # Debug 构建（含调试符号）
-.\build.bat --clean       # 清理重新构建
+.\build.bat               # 构建 x64 和 x86 两个版本（Release）
+.\build.bat --clean       # 清理后重新构建两个版本
+.\build.bat --x64-only    # 仅构建 x64 版本
+.\build.bat --x86-only    # 仅构建 x86 版本
+.\build.bat --debug       # Debug 构建（未来支持）
 .\build.bat --help        # 显示所有选项
 ```
 
-**输出文件：**
-- x64 构建：`build\bin\Release\x64dbg_mcp.dp64`
-- x86 构建：`build\bin\Release\x32dbg_mcp.dp32`
+**输出文件**（位于 `dist/` 目录）：
+- x64 插件：`dist\x64dbg_mcp.dp64`（约 837 KB）
+- x86 插件：`dist\x32dbg_mcp.dp32`（约 800 KB）
 
 ### 手动构建步骤
 
@@ -145,18 +148,33 @@ cmake --build build --config Release
 
 ## 安装
 
-1. 将编译好的插件复制到 x64dbg 的插件目录：
-```bash
-cp build/bin/Release/x64dbg_mcp.dp64 /path/to/x64dbg/plugins/
+1. 将编译好的插件复制到对应的调试器目录：
+
+```powershell
+# 对于 x64dbg（64位）
+# 将 <x64dbg路径> 替换为你的实际 x64dbg 安装目录
+copy dist\x64dbg_mcp.dp64 <x64dbg路径>\x64\plugins\
+
+# 对于 x32dbg（32位）
+copy dist\x32dbg_mcp.dp32 <x64dbg路径>\x32\plugins\
+
+# 示例（如果安装在 D:\Tools\x64dbg）：
+# copy dist\x64dbg_mcp.dp64 D:\Tools\x64dbg\x64\plugins\
+# copy dist\x32dbg_mcp.dp32 D:\Tools\x64dbg\x32\plugins\
 ```
 
-2. 复制配置文件：
-```bash
-mkdir -p /path/to/x64dbg/plugins/x64dbg-mcp
-cp config.json /path/to/x64dbg/plugins/x64dbg-mcp/
+2. （可选）复制配置文件：
+```powershell
+# 为 x64dbg 创建配置目录
+mkdir <x64dbg路径>\x64\plugins\x64dbg-mcp
+copy config.json <x64dbg路径>\x64\plugins\x64dbg-mcp\
+
+# 为 x32dbg 创建配置目录
+mkdir <x64dbg路径>\x32\plugins\x32dbg-mcp
+copy config.json <x64dbg路径>\x32\plugins\x32dbg-mcp\
 ```
 
-3. 重启 x64dbg 以加载插件
+3. 重启 x64dbg/x32dbg 以加载插件
 
 ## 使用方法
 

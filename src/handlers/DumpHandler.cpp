@@ -3,7 +3,10 @@
 #include "../core/MethodDispatcher.h"
 #include "../core/PermissionChecker.h"
 #include "../core/Exceptions.h"
+#include "../core/Logger.h"
 #include "../utils/StringUtils.h"
+#include <_scriptapi_module.h>
+#include <set>
 
 namespace MCP {
 
@@ -123,12 +126,20 @@ nlohmann::json DumpHandler::AutoUnpackAndDump(const nlohmann::json& params) {
 }
 
 nlohmann::json DumpHandler::AnalyzeModule(const nlohmann::json& params) {
-    // 验证参数
-    if (!params.contains("module")) {
-        throw InvalidParamsException("Missing required parameter: module");
-    }
+    std::string module;
     
-    std::string module = params["module"].get<std::string>();
+    // 如果没有提供 module 参数,使用主模块
+    if (!params.contains("module") || params["module"].is_null()) {
+        Script::Module::ModuleInfo info;
+        if (Script::Module::GetMainModuleInfo(&info)) {
+            module = info.name;
+            Logger::Info("No module specified, using main module: {}", module);
+        } else {
+            throw MCPException("No module specified and failed to get main module", -32000);
+        }
+    } else {
+        module = params["module"].get<std::string>();
+    }
     
     auto& manager = DumpManager::Instance();
     auto info = manager.AnalyzeModule(module);
@@ -138,18 +149,38 @@ nlohmann::json DumpHandler::AnalyzeModule(const nlohmann::json& params) {
 
 nlohmann::json DumpHandler::DetectOEP(const nlohmann::json& params) {
     // 验证参数
-    if (!params.contains("module_base")) {
-        throw InvalidParamsException("Missing required parameter: module_base");
+    if (!params.contains("module")) {
+        throw InvalidParamsException("Missing required parameter: module");
     }
     
-    std::string baseStr = params["module_base"].get<std::string>();
-    uint64_t moduleBase = StringUtils::ParseAddress(baseStr);
+    std::string moduleStr = params["module"].get<std::string>();
+    std::string strategy = params.value("strategy", "entropy");
+    
+    // 验证策略参数
+    static const std::set<std::string> validStrategies = {
+        "entropy", "code_analysis", "api_calls", "tls", "entrypoint"
+    };
+    
+    if (validStrategies.find(strategy) == validStrategies.end()) {
+        throw InvalidParamsException(
+            "Invalid strategy '" + strategy + "'. Valid strategies: entropy, code_analysis, api_calls, tls, entrypoint"
+        );
+    }
     
     auto& manager = DumpManager::Instance();
-    auto oepOpt = manager.DetectOEP(moduleBase);
+    
+    // 解析模块名或地址
+    auto moduleBaseOpt = manager.ParseModuleOrAddress(moduleStr);
+    if (!moduleBaseOpt.has_value()) {
+        throw InvalidParamsException("Invalid module name or address: " + moduleStr);
+    }
+    
+    uint64_t moduleBase = moduleBaseOpt.value();
+    auto oepOpt = manager.DetectOEP(moduleBase, strategy);
     
     nlohmann::json result;
     result["detected"] = oepOpt.has_value();
+    result["strategy"] = strategy;
     
     if (oepOpt.has_value()) {
         uint64_t oep = oepOpt.value();

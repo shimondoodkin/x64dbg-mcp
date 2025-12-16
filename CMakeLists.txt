@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(x64dbg_mcp VERSION 1.0.1 LANGUAGES CXX)
+project(x64dbg_mcp VERSION 1.0.2 LANGUAGES CXX RC)
 
 # C++17 标准
 set(CMAKE_CXX_STANDARD 17)
@@ -55,6 +55,9 @@ set(CORE_SOURCES
     src/core/RequestValidator.cpp
     src/core/MethodDispatcher.cpp
     src/core/PermissionChecker.cpp
+    src/core/MCPToolRegistry.cpp
+    src/core/MCPResourceRegistry.cpp
+    src/core/MCPPromptRegistry.cpp
 )
 
 set(COMMUNICATION_SOURCES
@@ -93,6 +96,11 @@ set(UTILS_SOURCES
     src/utils/ThreadPool.cpp
 )
 
+set(UI_SOURCES
+    src/ui/ConfigEditor.cpp
+    src/ui/ConfigEditor.rc
+)
+
 set(PLUGIN_SOURCES
     src/PluginEntry.cpp
 )
@@ -104,6 +112,7 @@ add_library(x64dbg_mcp SHARED
     ${BUSINESS_SOURCES}
     ${HANDLER_SOURCES}
     ${UTILS_SOURCES}
+    ${UI_SOURCES}
     ${PLUGIN_SOURCES}
 )
 

@@ -8,10 +8,15 @@ A Model Context Protocol (MCP) server implementation for x64dbg and x32dbg, enab
 
 ## Features
 
+- **Full MCP Specification Compliance**: Implements all three core MCP building blocks
+  - **Tools (69)**: AI-invokable debugging functions
+  - **Resources (15)**: Application-controlled context data sources
+  - **Prompts (10)**: User-guided debugging workflow templates
+  
 - **JSON-RPC 2.0 Protocol**: Standard, language-agnostic interface
 - **HTTP + SSE Communication**: Modern web-based integration via Server-Sent Events
-- **MCP Protocol Support**: Compatible with Model Context Protocol for AI agent integration
-- **Comprehensive Debugging API (63+ methods)**: 
+
+- **Tools - AI-Controlled Debugging (69 functions)**: 
   - Execution control (run, pause, step, run_to)
   - Memory read/write/search/allocate
   - Register access (50+ registers including GPR, SSE, AVX)
@@ -22,41 +27,49 @@ A Model Context Protocol (MCP) server implementation for x64dbg and x32dbg, enab
   - **Dump & Unpacking** (module dump, memory dump, auto-unpacking, OEP detection, IAT reconstruction)
   - **Script execution** (execute x64dbg commands, batch operations)
   - **Context snapshots** (capture and compare debugging state)
-  - Event notifications via SSE
+  
+- **Resources - Context Providers (15 sources)**:
+  - Direct resources: debugger state, registers, modules, threads, memory map, breakpoints, stack
+  - Resource templates: memory content, disassembly, module info, symbol resolution, function analysis
+  - Read-only, application-controlled access
+  
+- **Prompts - Workflow Templates (10 prompts)**:
+  - Crash analysis, vulnerability hunting, function tracing
+  - Binary unpacking, algorithm reversing, execution comparison
+  - String hunting, code patching, API monitoring
+  - Debug session initialization
+
 - **Security**: Permission-based access control
-- **Extensible**: Plugin architecture for custom methods
+- **Extensible**: Plugin architecture for custom methods, resources, and prompts
 
-## What's New in v1.1.0 (Development)
+## What's New in v1.0.2
 
-- 🏗️ **Dual Architecture Support**: Now supports both x64dbg and x32dbg
-  - Build for x64 (64-bit) or x86 (32-bit) architecture
-  - Architecture-aware register handling (RAX/EAX, RSP/ESP, etc.)
-  - Separate plugin files: `x64dbg_mcp.dp64` and `x32dbg_mcp.dp32`
-  - Unified SDK and build system for both architectures
+- 🐛 **Bug Fixes**: Fixed critical issues from automated testing
+  - Fixed `breakpoint_toggle` state consistency
+  - Implemented actual `memory_search` functionality
+  - Fixed `memory_get_info` to return correct region base address
+  - Fixed `debug_step_over` RIP synchronization timing
+  - Enhanced `dump_detect_oep` strategy validation with clear error messages
+  - Added missing diagnostic fields (`error`, `encoding`, `progress`)
 
-- 🎯 **Dump & Unpacking Features**: Comprehensive memory dumping and automatic unpacking capabilities
-  - `dump.module`: Dump executable modules with PE reconstruction
-  - `dump.memory_region`: Dump arbitrary memory regions
-  - `dump.auto_unpack`: Automatic unpacking with OEP detection
-  - `dump.analyze_module`: Detect packers (UPX, ASPack, etc.)
-  - `dump.detect_oep`: Original Entry Point detection
-  - `dump.fix_imports`: IAT reconstruction (Scylla-style)
-  - Support for multi-layer unpacking
-  - AI-driven customizable unpacking strategies
+- 🔧 **Build System Improvements**
+  - Dual architecture build script: compile both x64 and x86 in one command
+  - Unified output directory (`dist/`) for both architectures
+  - Faster parallel compilation with `-j` flag
+  - Simplified build options: `--clean`, `--x64-only`, `--x86-only`
 
-- ✨ **Script Execution API**: Execute x64dbg commands programmatically
-  - `script.execute`: Run single x64dbg command
-  - `script.execute_batch`: Execute multiple commands with error handling
-  - `script.get_last_result`: Get last command execution result
+- 📚 **Documentation Cleanup**
+  - Removed redundant technical documentation
+  - Streamlined core documentation
 
-- 🔍 **Context Snapshot API**: Capture and compare debugging state
-  - `context.get_snapshot`: Full debugging context snapshot
-  - `context.get_basic`: Quick register + state snapshot
-  - `context.compare_snapshots`: Compare two snapshots to find differences
+## Previous Releases
 
-- 📊 **Enhanced Automation**: Combine scripting with snapshots for powerful workflows
+### v1.0.1
 
-See [UPDATE.md](UPDATE.md) for detailed feature descriptions and examples.
+- Thread and stack management APIs
+- Enhanced error handling and logging
+
+For complete version history, see [CHANGELOG.md](CHANGELOG.md)
 
 ## Building from Source
 
@@ -77,33 +90,38 @@ The easiest way to build is using the provided build script:
 git clone https://github.com/SetsunaYukiOvO/x64dbg-mcp.git
 cd x64dbg-mcp
 
-# Build for x64 (64-bit x64dbg) - Default
+# Build both x64 and x86 architectures (recommended)
 .\build.bat
 
-# Build for x86 (32-bit x32dbg)
-.\build.bat --arch x86
+# Build only x64 architecture
+.\build.bat --x64-only
+
+# Build only x86 architecture
+.\build.bat --x86-only
+
+# Clean rebuild
+.\build.bat --clean
 
 # The script will:
-# 1. Automatically detect or install vcpkg
+# 1. Automatically detect vcpkg installation
 # 2. Download dependencies (nlohmann_json)
-# 3. Configure CMake with proper settings for selected architecture
-# 4. Build using Visual Studio
-# 5. Optionally install to x64dbg/x32dbg plugins directory
+# 3. Configure CMake for both architectures
+# 4. Build using Visual Studio with parallel compilation
+# 5. Copy output files to dist/ directory
 ```
 
 Build script options:
 ```powershell
-.\build.bat               # Release build for x64 (default)
-.\build.bat --arch x86    # Build for x86 (32-bit)
-.\build.bat --arch x64    # Build for x64 (64-bit)
-.\build.bat --debug       # Debug build with symbols
-.\build.bat --clean       # Clean rebuild
-.\build.bat --help        # Show all options
+.\build.bat               # Build both x64 and x86 (Release)
+.\build.bat --clean       # Clean rebuild both architectures
+.\build.bat --x64-only    # Build x64 only
+.\build.bat --x86-only    # Build x86 only
+.\build.bat --debug       # Debug build (future support)
 ```
 
-**Output files:**
-- x64 build: `build\bin\Release\x64dbg_mcp.dp64`
-- x86 build: `build\bin\Release\x32dbg_mcp.dp32`
+**Output files** (in `dist/` directory):
+- x64 plugin: `dist\x64dbg_mcp.dp64` (~837 KB)
+- x86 plugin: `dist\x32dbg_mcp.dp32` (~800 KB)
 
 ### Manual Build Steps
 
@@ -145,18 +163,33 @@ cmake --build build --config Release
 
 ## Installation
 
-1. Copy the compiled plugin to x64dbg's plugin directory:
-```bash
-cp build/bin/Release/x64dbg_mcp.dp64 /path/to/x64dbg/plugins/
+1. Copy the compiled plugins to their respective debugger directories:
+
+```powershell
+# For x64dbg (64-bit)
+# Replace <x64dbg-path> with your actual x64dbg installation directory
+copy dist\x64dbg_mcp.dp64 <x64dbg-path>\x64\plugins\
+
+# For x32dbg (32-bit)
+copy dist\x32dbg_mcp.dp32 <x64dbg-path>\x32\plugins\
+
+# Example (if installed at C:\x64dbg):
+# copy dist\x64dbg_mcp.dp64 C:\x64dbg\x64\plugins\
+# copy dist\x32dbg_mcp.dp32 C:\x64dbg\x32\plugins\
 ```
 
-2. Copy the configuration file:
-```bash
-mkdir -p /path/to/x64dbg/plugins/x64dbg-mcp
-cp config.json /path/to/x64dbg/plugins/x64dbg-mcp/
+2. (Optional) Copy the configuration file:
+```powershell
+# For x64dbg
+mkdir <x64dbg-path>\x64\plugins\x64dbg-mcp
+copy config.json <x64dbg-path>\x64\plugins\x64dbg-mcp\
+
+# For x32dbg
+mkdir <x64dbg-path>\x32\plugins\x32dbg-mcp
+copy config.json <x64dbg-path>\x32\plugins\x32dbg-mcp\
 ```
 
-3. Restart x64dbg to load the plugin
+3. Restart x64dbg/x32dbg to load the plugin
 
 ## Usage
 

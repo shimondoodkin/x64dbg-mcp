@@ -146,9 +146,10 @@ public:
     /**
      * @brief 检测当前OEP(Original Entry Point)
      * @param moduleBase 模块基址
+     * @param strategy 检测策略: "entropy", "code_analysis", "api_calls", "tls"
      * @return OEP地址,如果未找到返回nullopt
      */
-    std::optional<uint64_t> DetectOEP(uint64_t moduleBase);
+    std::optional<uint64_t> DetectOEP(uint64_t moduleBase, const std::string& strategy = "entropy");
     
     /**
      * @brief 获取可dump的内存区域列表
@@ -200,6 +201,13 @@ public:
     void SetOEPDetectionStrategy(
         std::function<std::optional<uint64_t>(uint64_t)> strategy
     );
+    
+    /**
+     * @brief 解析模块名或地址
+     * @param input 模块名或地址字符串
+     * @return 模块基址，如果无效返回 nullopt
+     */
+    std::optional<uint64_t> ParseModuleOrAddress(const std::string& input);
 
 private:
     DumpManager() = default;
@@ -208,7 +216,6 @@ private:
     DumpManager& operator=(const DumpManager&) = delete;
     
     // 内部辅助方法
-    std::optional<uint64_t> ParseModuleOrAddress(const std::string& input);
     bool ValidatePEHeader(const std::vector<uint8_t>& buffer);
     bool IsPacked(uint64_t moduleBase, std::string& packerId);
     uint64_t GetModuleSize(uint64_t moduleBase);

@@ -10,6 +10,10 @@
 #include <cstring>
 #include <windows.h>
 
+#ifdef XDBG_SDK_AVAILABLE
+#include "_scriptapi_module.h"  // For Script::Module::EntryFromAddr
+#endif
+
 namespace MCP {
 
 DumpManager& DumpManager::Instance() {
@@ -207,12 +211,20 @@ DumpResult DumpManager::DumpMemoryRegion(
         result.success = true;
         result.filePath = outputPath;
         result.dumpedSize = buffer.size();
+        result.finalProgress.stage = DumpProgress::Stage::Completed;
+        result.finalProgress.progress = 100;
+        result.finalProgress.message = "Memory region dumped successfully";
+        result.finalProgress.success = true;
         
         Logger::Info("Memory region dumped successfully to: {}", outputPath);
         
     } catch (const std::exception& e) {
         result.success = false;
         result.error = e.what();
+        result.finalProgress.stage = DumpProgress::Stage::Failed;
+        result.finalProgress.progress = 0;
+        result.finalProgress.message = e.what();
+        result.finalProgress.success = false;
         Logger::Error("Memory dump failed: {}", e.what());
     }
     
@@ -366,38 +378,53 @@ ModuleDumpInfo DumpManager::AnalyzeModule(const std::string& moduleNameOrAddress
     return info;
 }
 
-std::optional<uint64_t> DumpManager::DetectOEP(uint64_t moduleBase) {
-    // 尝试多种OEP检测策略
+std::optional<uint64_t> DumpManager::DetectOEP(uint64_t moduleBase, const std::string& strategy) {
+    Logger::Debug("Detecting OEP for module at 0x{:X} using strategy: {}", moduleBase, strategy);
     
-    // 1. 用户自定义策略
-    if (m_oepDetectionStrategy) {
-        auto result = m_oepDetectionStrategy(moduleBase);
+    // 根据策略选择检测方法
+    if (strategy == "entropy") {
+        auto result = DetectOEPByEntropy(moduleBase);
         if (result.has_value()) {
-            Logger::Info("OEP detected by custom strategy: 0x{:X}", result.value());
-            return result;
+            Logger::Info("OEP detected by entropy: 0x{:X}", result.value());
+        }
+        return result;
+    }
+    else if (strategy == "code_analysis") {
+        // 基于代码分析/特征码检测
+        auto result = DetectOEPByPattern(moduleBase);
+        if (result.has_value()) {
+            Logger::Info("OEP detected by code analysis: 0x{:X}", result.value());
+        }
+        return result;
+    }
+    else if (strategy == "api_calls") {
+        // 基于 API 调用检测
+        // TODO: 实现基于 API 调用的 OEP 检测
+        Logger::Warning("API calls strategy not yet implemented");
+        return std::nullopt;
+    }
+    else if (strategy == "tls") {
+        // 基于 TLS 回调检测
+        // TODO: 实现基于 TLS 的 OEP 检测
+        Logger::Warning("TLS strategy not yet implemented");
+        return std::nullopt;
+    }
+    else if (strategy == "entrypoint") {
+        // 直接使用模块声明的入口点
+        uint64_t entryPoint = GetModuleEntryPoint(moduleBase);
+        if (entryPoint != 0) {
+            Logger::Info("Using declared entry point as OEP: 0x{:X}", entryPoint);
+            return entryPoint;
+        } else {
+            Logger::Warning("Failed to get module entry point");
+            return std::nullopt;
         }
     }
-    
-    // 2. 基于熵值检测
-    auto entropyResult = DetectOEPByEntropy(moduleBase);
-    if (entropyResult.has_value()) {
-        return entropyResult;
+    else {
+        // 不应该到达这里，因为 handler 已经验证了策略
+        Logger::Error("Unknown OEP detection strategy: {}", strategy);
+        return std::nullopt;
     }
-    
-    // 3. 基于特征码检测
-    auto patternResult = DetectOEPByPattern(moduleBase);
-    if (patternResult.has_value()) {
-        return patternResult;
-    }
-    
-    // 4. 基于执行追踪检测
-    auto execResult = DetectOEPByExecution(moduleBase);
-    if (execResult.has_value()) {
-        return execResult;
-    }
-    
-    Logger::Warning("Failed to detect OEP for module at 0x{:X}", moduleBase);
-    return std::nullopt;
 }
 
 std::vector<MemoryRegionDump> DumpManager::GetDumpableRegions(uint64_t moduleBase) {
@@ -673,7 +700,8 @@ uint64_t DumpManager::GetModuleSize(uint64_t moduleBase) {
 }
 
 uint64_t DumpManager::GetModuleEntryPoint(uint64_t moduleBase) {
-    duint entry = DbgFunctions()->ModEntryFromAddr(moduleBase);
+    // Use Script API to get entry point
+    duint entry = Script::Module::EntryFromAddr(moduleBase);
     return static_cast<uint64_t>(entry);
 }
 

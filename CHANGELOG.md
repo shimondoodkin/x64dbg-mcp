@@ -5,7 +5,34 @@ All notable changes to the x64dbg MCP Server Plugin will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - TBD
+## [1.0.2] - 2025-12-16
+
+### Fixed
+- **Critical Bug Fixes from Automated Testing**
+  - Fixed `breakpoint_toggle` returning inconsistent enabled state
+  - Implemented actual memory search functionality in `memory_search` (was placeholder)
+  - Fixed `memory_get_info` to return correct memory region base address using VirtualQueryEx API
+  - Fixed `debug_step_over` RIP synchronization timing with x64dbg state updates
+  - Enhanced `dump_detect_oep` strategy validation with clear error messages
+  - Added missing diagnostic fields across multiple tools:
+    - `script_get_last_result`: Added `error` field
+    - `stack_read_frame`: Added `encoding` field
+    - `dump_memory_region`: Added complete `progress` information
+
+### Changed
+- **Build System Improvements**
+  - New dual-architecture build script: compile both x64 and x86 in single command
+  - Unified output directory (`dist/`) for both architectures
+  - Parallel compilation with `-j` flag for faster builds
+  - Simplified build options: `--clean`, `--x64-only`, `--x86-only`
+  - Build script no longer blocks on interactive prompts
+
+### Removed
+- **Documentation Cleanup**
+  - Removed redundant technical documentation files
+  - Streamlined to core documentation only
+
+## [1.1.0] - 2025-12-XX
 
 ### Added
 

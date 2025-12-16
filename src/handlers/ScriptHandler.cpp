@@ -110,6 +110,14 @@ json ScriptHandler::executeBatch(const json& params) {
 
             results.push_back(cmdResult);
         }
+        
+        // 更新 lastResult 和 lastSuccess
+        lastSuccess = allSuccess;
+        if (allSuccess) {
+            lastResult = "All " + std::to_string(successCount) + " commands executed successfully";
+        } else {
+            lastResult = std::to_string(successCount) + " succeeded, " + std::to_string(failCount) + " failed";
+        }
 
         return {
             {"success", allSuccess},
@@ -129,8 +137,15 @@ json ScriptHandler::executeBatch(const json& params) {
 }
 
 json ScriptHandler::getLastResult(const json& params) {
-    return {
+    json result = {
         {"success", lastSuccess},
         {"result", lastResult}
     };
+    
+    // 当失败时，添加 error 字段提供更多信息
+    if (!lastSuccess) {
+        result["error"] = lastResult.empty() ? "No script executed yet or last execution failed" : lastResult;
+    }
+    
+    return result;
 }

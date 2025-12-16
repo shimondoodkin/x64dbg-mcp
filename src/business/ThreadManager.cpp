@@ -121,7 +121,24 @@ uint32_t ThreadManager::GetCurrentThreadId() {
     }
     
     // 使用 x64dbg Bridge API 获取当前线程ID
-    return DbgValFromString("tid");
+    DWORD tid = DbgGetThreadId();
+    if (tid == 0) {
+        // 如果 DbgGetThreadId 返回 0，尝试从线程列表中获取
+        THREADLIST threadList;
+        memset(&threadList, 0, sizeof(THREADLIST));
+        DbgGetThreadList(&threadList);
+        
+        if (threadList.count > 0 && threadList.CurrentThread >= 0 && threadList.CurrentThread < threadList.count) {
+            tid = threadList.list[threadList.CurrentThread].BasicInfo.ThreadId;
+        }
+        
+        // 释放线程列表内存
+        if (threadList.list) {
+            BridgeFree(threadList.list);
+        }
+    }
+    
+    return static_cast<uint32_t>(tid);
 }
 
 ThreadInfo ThreadManager::GetCurrentThread() {
