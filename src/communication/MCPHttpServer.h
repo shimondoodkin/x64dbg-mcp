@@ -45,8 +45,16 @@ public:
     
     // 获取服务器地址
     std::string GetAddress() const { return m_host + ":" + std::to_string(m_port); }
+    static bool BroadcastNotification(const std::string& method, const nlohmann::json& params);
 
 private:
+    struct MCPToolCallResult {
+        bool success = false;
+        std::string contentText;
+        int errorCode = -32603;
+        std::string errorMessage;
+    };
+
     // 服务器主循环
     void ServerLoop();
     
@@ -69,7 +77,7 @@ private:
     bool ParseJsonRpcRequest(const std::string& json, std::string& method, std::string& requestId, bool& hasRequestId);
     
     // 调用 MCP 工具
-    std::string CallMCPTool(const std::string& toolName, const nlohmann::json& arguments);
+    MCPToolCallResult CallMCPTool(const std::string& toolName, const nlohmann::json& arguments);
     
     // 解析 HTTP 请求
     bool ParseHttpRequest(const std::string& request, std::string& method, 
@@ -80,7 +88,8 @@ private:
                          const std::string& contentType = "application/json");
     
     // 发送 SSE 事件
-    void SendSSEEvent(SOCKET socket, const std::string& event, const std::string& data);
+    bool SendSSEEvent(SOCKET socket, const std::string& event, const std::string& data);
+    bool BroadcastSSEEvent(const std::string& event, const std::string& data);
     void CleanupFinishedClientTasks();
 
     std::string m_host;
@@ -92,7 +101,13 @@ private:
     std::mutex m_clientTasksMutex;
     std::unordered_set<SOCKET> m_activeClientSockets;
     std::mutex m_activeClientSocketsMutex;
+    std::unordered_set<SOCKET> m_sseClientSockets;
+    std::mutex m_sseClientSocketsMutex;
+    std::mutex m_sseSendMutex;
     std::atomic<int> m_requestId;
+
+    static std::mutex s_activeInstanceMutex;
+    static MCPHttpServer* s_activeInstance;
 };
 
 } // namespace MCP

@@ -7,10 +7,12 @@
 #include <algorithm>
 #include <cstdio>
 
-#ifdef X64DBG_SDK_AVAILABLE
+#ifdef XDBG_SDK_AVAILABLE
 #include "_scriptapi_function.h"
 #include "_scriptapi_label.h"
+#include "_scriptapi_module.h"
 #include "_scriptapi_symbol.h"
+#include <bridgelist.h>
 #endif
 
 namespace MCP {
@@ -125,11 +127,65 @@ std::vector<SymbolInfo> SymbolResolver::EnumerateSymbols(const std::string& modu
     }
     
     std::vector<SymbolInfo> symbols;
-    
+
+#ifdef XDBG_SDK_AVAILABLE
+    auto moduleInfo = GetModuleInfo(moduleName);
+    if (!moduleInfo.has_value()) {
+        Logger::Warning("Failed to resolve module for symbol enumeration: '{}'", moduleName);
+        return symbols;
+    }
+
+    const std::string resolvedModuleName = moduleInfo->name;
+    const uint64_t moduleBase = moduleInfo->base;
+    const std::string targetLower = StringUtils::ToLower(resolvedModuleName);
+
+    BridgeList<Script::Symbol::SymbolInfo> symbolList;
+    if (!Script::Symbol::GetList(&symbolList)) {
+        Logger::Warning("Script::Symbol::GetList failed");
+        return symbols;
+    }
+
+    symbols.reserve(symbolList.Count());
+    for (size_t i = 0; i < symbolList.Count(); ++i) {
+        const auto& sym = symbolList[i];
+        if (StringUtils::ToLower(sym.mod) != targetLower) {
+            continue;
+        }
+
+        SymbolInfo info;
+        info.name = sym.name;
+        info.module = sym.mod;
+        info.address = moduleBase + sym.rva;
+        info.size = 0;
+        info.decorated = "";
+
+        switch (sym.type) {
+            case Script::Symbol::Function:
+                info.type = SymbolType::Function;
+                break;
+            case Script::Symbol::Import:
+                info.type = SymbolType::Import;
+                break;
+            case Script::Symbol::Export:
+                info.type = SymbolType::Export;
+                break;
+            default:
+                info.type = SymbolType::Function;
+                break;
+        }
+
+        if (typeFilter.has_value() && info.type != typeFilter.value()) {
+            continue;
+        }
+
+        symbols.push_back(std::move(info));
+    }
+#endif
+
     // 使用 x64dbg API 枚举符号
     // 实际实现需要调用 DbgEnumSymbols 或类似函数
     
-    Logger::Debug("Enumerated {} symbols from module '{}'", symbols.size(), moduleName);
+    Logger::Debug("Enumerated {} symbols from module '{}'", symbols.size(), moduleName.empty() ? "<main>" : moduleName);
     return symbols;
 }
 
@@ -163,10 +219,43 @@ std::optional<ModuleInfo> SymbolResolver::GetModuleInfo(const std::string& modul
     }
     
     // 枚举所有模块并查找匹配的
+    #ifdef XDBG_SDK_AVAILABLE
+    if (moduleName.empty()) {
+        Script::Module::ModuleInfo info{};
+        if (Script::Module::GetMainModuleInfo(&info)) {
+            ModuleInfo module;
+            module.name = info.name;
+            module.path = info.path;
+            module.base = info.base;
+            module.size = info.size;
+            module.entry = info.entry;
+            const std::string lowerPath = StringUtils::ToLower(module.path);
+            module.isSystemModule = lowerPath.find("\\windows\\") != std::string::npos ||
+                                    lowerPath.find("\\system32\\") != std::string::npos;
+            return module;
+        }
+        return std::nullopt;
+    }
+
+    Script::Module::ModuleInfo info{};
+    if (Script::Module::InfoFromName(moduleName.c_str(), &info)) {
+        ModuleInfo module;
+        module.name = info.name;
+        module.path = info.path;
+        module.base = info.base;
+        module.size = info.size;
+        module.entry = info.entry;
+        const std::string lowerPath = StringUtils::ToLower(module.path);
+        module.isSystemModule = lowerPath.find("\\windows\\") != std::string::npos ||
+                                lowerPath.find("\\system32\\") != std::string::npos;
+        return module;
+    }
+    #endif
+
     auto modules = EnumerateModules();
-    
+    const std::string normalizedName = StringUtils::ToLower(moduleName);
     for (const auto& module : modules) {
-        if (StringUtils::ToLower(module.name) == StringUtils::ToLower(moduleName)) {
+        if (StringUtils::ToLower(module.name) == normalizedName) {
             return module;
         }
     }
@@ -180,11 +269,26 @@ std::optional<ModuleInfo> SymbolResolver::GetModuleFromAddress(uint64_t address)
     }
     
     // 使用 x64dbg API 获取模块
+    #ifdef XDBG_SDK_AVAILABLE
+    Script::Module::ModuleInfo info{};
+    if (Script::Module::InfoFromAddr(address, &info)) {
+        ModuleInfo module;
+        module.name = info.name;
+        module.path = info.path;
+        module.base = info.base;
+        module.size = info.size;
+        module.entry = info.entry;
+        const std::string lowerPath = StringUtils::ToLower(module.path);
+        module.isSystemModule = lowerPath.find("\\windows\\") != std::string::npos ||
+                                lowerPath.find("\\system32\\") != std::string::npos;
+        return module;
+    }
+    #endif
+
     char moduleName[MAX_MODULE_SIZE] = {0};
     if (!DbgGetModuleAt(address, moduleName)) {
         return std::nullopt;
     }
-    
     return GetModuleInfo(moduleName);
 }
 
@@ -194,7 +298,30 @@ std::vector<ModuleInfo> SymbolResolver::EnumerateModules() {
     }
     
     std::vector<ModuleInfo> modules;
-    
+
+#ifdef XDBG_SDK_AVAILABLE
+    BridgeList<Script::Module::ModuleInfo> moduleList;
+    if (!Script::Module::GetList(&moduleList)) {
+        Logger::Warning("Script::Module::GetList failed");
+        return modules;
+    }
+
+    modules.reserve(moduleList.Count());
+    for (size_t i = 0; i < moduleList.Count(); ++i) {
+        const auto& mod = moduleList[i];
+        ModuleInfo info;
+        info.name = mod.name;
+        info.path = mod.path;
+        info.base = mod.base;
+        info.size = mod.size;
+        info.entry = mod.entry;
+        const std::string lowerPath = StringUtils::ToLower(info.path);
+        info.isSystemModule = lowerPath.find("\\windows\\") != std::string::npos ||
+                              lowerPath.find("\\system32\\") != std::string::npos;
+        modules.push_back(std::move(info));
+    }
+#endif
+
     // 使用 x64dbg API 枚举模块
     // 实际实现需要调用 DbgEnumModules 或类似函数
     

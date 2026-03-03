@@ -135,10 +135,14 @@ std::vector<MemorySearchResult> MemoryManager::Search(
         } else {
             try {
                 auto bytes = StringUtils::HexToBytes(cleaned);
-                if (!bytes.empty()) {
-                    patternBytes.push_back(bytes[0]);
-                    mask.push_back(true);  // 精确匹配
+                if (bytes.size() != 1) {
+                    throw InvalidParamsException(
+                        "Invalid pattern token (must be exactly one byte or wildcard): " + cleaned);
                 }
+                patternBytes.push_back(bytes[0]);
+                mask.push_back(true);  // 精确匹配
+            } catch (const InvalidParamsException&) {
+                throw;
             } catch (...) {
                 throw InvalidParamsException("Invalid pattern format: " + cleaned);
             }

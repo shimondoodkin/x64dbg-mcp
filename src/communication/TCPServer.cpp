@@ -175,7 +175,7 @@ void TCPServer::AcceptThread() {
         uint16_t clientPort = ntohs(clientAddr.sin_port);
         
         // 濡偓閺屻儲娓舵径褑绻涢幒銉︽殶
-        int maxConnections = ConfigManager::Instance().GetMaxConnections();
+        int maxConnections = ConfigManager::Instance().Get<int>("server.max_connections", 0);
         if (maxConnections > 0 && 
             static_cast<int>(m_connectionManager.GetClientCount()) >= maxConnections) {
             Logger::Warning("Maximum connections reached, rejecting client from {}:{}", 

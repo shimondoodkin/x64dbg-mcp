@@ -638,7 +638,8 @@ void MCPToolRegistry::RegisterDefaultTools() {
         "disassembly.range",
         {
             {"start", "string", "Start address", true, nullptr, nullptr},
-            {"end", "string", "End address", true, nullptr, nullptr}
+            {"end", "string", "End address", true, nullptr, nullptr},
+            {"max_instructions", "integer", "Maximum instructions to disassemble", false, 10000, nullptr}
         }
     });
     
@@ -674,8 +675,8 @@ void MCPToolRegistry::RegisterDefaultTools() {
             {"module", "string", "Module name or base address", true, nullptr, nullptr},
             {"output_path", "string", "Output file path", true, nullptr, nullptr},
             {"max_iterations", "integer", "Maximum unpacking iterations", false, 10, nullptr},
-            {"strategy", "string", "Unpacking strategy", false, "entropy",
-             json::array({"entropy", "entrypoint", "imports", "tls"})}
+            {"strategy", "string", "Unpacking strategy (entropy, code_analysis, api_calls, tls, entrypoint)", false, "entropy",
+             json::array({"entropy", "code_analysis", "api_calls", "tls", "entrypoint"})}
         }
     });
     
@@ -684,7 +685,7 @@ void MCPToolRegistry::RegisterDefaultTools() {
         "Analyze module and detect packer",
         "dump.analyze_module",
         {
-            {"module", "string", "Module name or base address", true, nullptr, nullptr}
+            {"module", "string", "Module name or base address (optional, defaults to main module)", false, nullptr, nullptr}
         }
     });
     

@@ -124,6 +124,9 @@ bool ReceiveHttpRequest(SOCKET socket, std::string& request, bool& payloadTooLar
         if (headerEnd != std::string::npos && lengthKnown) {
             const size_t totalExpected = headerEnd + 4 + contentLength;
             if (request.size() >= totalExpected) {
+                if (request.size() > totalExpected) {
+                    request.resize(totalExpected);
+                }
                 return true;
             }
         }
@@ -131,7 +134,12 @@ bool ReceiveHttpRequest(SOCKET socket, std::string& request, bool& payloadTooLar
 
     if (headerEnd != std::string::npos && lengthKnown) {
         const size_t totalExpected = headerEnd + 4 + contentLength;
-        return request.size() >= totalExpected;
+        if (request.size() >= totalExpected) {
+            if (request.size() > totalExpected) {
+                request.resize(totalExpected);
+            }
+            return true;
+        }
     }
 
     return false;
@@ -202,6 +210,9 @@ const char* GetHttpStatusText(int statusCode) {
 
 } // namespace
 
+std::mutex MCPHttpServer::s_activeInstanceMutex;
+MCPHttpServer* MCPHttpServer::s_activeInstance = nullptr;
+
 MCPHttpServer::MCPHttpServer() 
     : m_listenSocket(INVALID_SOCKET)
     , m_running(false)
@@ -211,6 +222,26 @@ MCPHttpServer::MCPHttpServer()
 
 MCPHttpServer::~MCPHttpServer() {
     Stop();
+}
+
+bool MCPHttpServer::BroadcastNotification(const std::string& method, const nlohmann::json& params) {
+    MCPHttpServer* active = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(s_activeInstanceMutex);
+        active = s_activeInstance;
+    }
+
+    if (!active || !active->IsRunning()) {
+        return false;
+    }
+
+    nlohmann::json notification = {
+        {"jsonrpc", "2.0"},
+        {"method", method},
+        {"params", params}
+    };
+
+    return active->BroadcastSSEEvent("message", notification.dump());
 }
 
 bool MCPHttpServer::Start(const std::string& host, int port) {
@@ -276,6 +307,12 @@ bool MCPHttpServer::Start(const std::string& host, int port) {
     }
 
     m_running = true;
+
+    {
+        std::lock_guard<std::mutex> lock(s_activeInstanceMutex);
+        s_activeInstance = this;
+    }
+
     m_serverThread = std::thread(&MCPHttpServer::ServerLoop, this);
 
     Logger::Info("MCP HTTP Server started on http://" + m_host + ":" + std::to_string(m_port));
@@ -339,6 +376,16 @@ void MCPHttpServer::Stop() {
         std::lock_guard<std::mutex> lock(m_activeClientSocketsMutex);
         m_activeClientSockets.clear();
     }
+    {
+        std::lock_guard<std::mutex> lock(m_sseClientSocketsMutex);
+        m_sseClientSockets.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(s_activeInstanceMutex);
+        if (s_activeInstance == this) {
+            s_activeInstance = nullptr;
+        }
+    }
 
     WSACleanup();
     Logger::Info("MCP HTTP Server stopped");
@@ -373,8 +420,14 @@ void MCPHttpServer::ServerLoop() {
                 closesocket(clientSocket);
             }
 
-            std::lock_guard<std::mutex> lock(m_activeClientSocketsMutex);
-            m_activeClientSockets.erase(clientSocket);
+            {
+                std::lock_guard<std::mutex> lock(m_activeClientSocketsMutex);
+                m_activeClientSockets.erase(clientSocket);
+            }
+            {
+                std::lock_guard<std::mutex> sseLock(m_sseClientSocketsMutex);
+                m_sseClientSockets.erase(clientSocket);
+            }
         });
 
         {
@@ -415,6 +468,8 @@ void MCPHttpServer::HandleClient(SOCKET clientSocket) {
     if (!ReceiveHttpRequest(clientSocket, request, payloadTooLarge)) {
         if (payloadTooLarge) {
             SendHttpResponse(clientSocket, 413, "{\"error\":\"Payload Too Large\"}");
+        } else if (!request.empty()) {
+            SendHttpResponse(clientSocket, 400, "{\"error\":\"Bad Request\"}");
         }
         closesocket(clientSocket);
         return;
@@ -475,6 +530,11 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
         return;
     }
 
+    {
+        std::lock_guard<std::mutex> lock(m_sseClientSocketsMutex);
+        m_sseClientSockets.insert(clientSocket);
+    }
+
     Logger::Info("SSE connection established, waiting for client messages...");
 
     // 璁剧疆 socket 涓洪潪闃诲妯″紡
@@ -512,6 +572,38 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
                     if (hasRequestId && !response.empty()) {
                         SendSSEEvent(clientSocket, "message", response);
                     }
+                } else {
+                    json errorResponse;
+                    try {
+                        const json requestJson = json::parse(line);
+                        json idValue = nullptr;
+                        if (requestJson.is_object() && requestJson.contains("id")) {
+                            const auto& id = requestJson["id"];
+                            if (id.is_null() || id.is_string() || id.is_number_integer()) {
+                                idValue = id;
+                            }
+                        }
+
+                        errorResponse = {
+                            {"jsonrpc", "2.0"},
+                            {"id", idValue},
+                            {"error", {
+                                {"code", -32600},
+                                {"message", "Invalid Request"}
+                            }}
+                        };
+                    } catch (const json::exception&) {
+                        errorResponse = {
+                            {"jsonrpc", "2.0"},
+                            {"id", nullptr},
+                            {"error", {
+                                {"code", -32700},
+                                {"message", "Parse error"}
+                            }}
+                        };
+                    }
+
+                    SendSSEEvent(clientSocket, "message", errorResponse.dump());
                 }
             }
         } else if (bytesReceived == 0) {
@@ -539,6 +631,10 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
     
     // SSE 杩炴帴缁撴潫锛屽叧闂?socket
     Logger::Info("Closing SSE connection");
+    {
+        std::lock_guard<std::mutex> lock(m_sseClientSocketsMutex);
+        m_sseClientSockets.erase(clientSocket);
+    }
     closesocket(clientSocket);
 }
 
@@ -611,7 +707,7 @@ bool MCPHttpServer::ParseJsonRpcRequest(const std::string& rawJson,
             hasRequestId = true;
             if (idIt->is_null()) {
                 requestId = "null";
-            } else if (idIt->is_string() || idIt->is_number()) {
+            } else if (idIt->is_string() || idIt->is_number_integer()) {
                 requestId = idIt->dump();
             } else {
                 return false;
@@ -698,7 +794,18 @@ std::string MCPHttpServer::HandleMCPMethod(const std::string& method, const std:
             Logger::Info("Calling tool: {} with args: {}", toolName, arguments.dump());
             
             // 璋冪敤宸ュ叿
-            std::string result = CallMCPTool(toolName, arguments);
+            MCPToolCallResult toolResult = CallMCPTool(toolName, arguments);
+
+            if (!toolResult.success) {
+                return json({
+                    {"jsonrpc", "2.0"},
+                    {"id", requestId == "null" ? nullptr : json::parse(requestId)},
+                    {"error", {
+                        {"code", toolResult.errorCode},
+                        {"message", toolResult.errorMessage}
+                    }}
+                }).dump();
+            }
             
             return json({
                 {"jsonrpc", "2.0"},
@@ -707,7 +814,7 @@ std::string MCPHttpServer::HandleMCPMethod(const std::string& method, const std:
                     {"content", json::array({
                         {
                             {"type", "text"},
-                            {"text", result}
+                            {"text", toolResult.contentText}
                         }
                     })}
                 }}
@@ -982,26 +1089,64 @@ void MCPHttpServer::SendHttpResponse(SOCKET socket, int statusCode,
     }
 }
 
-void MCPHttpServer::SendSSEEvent(SOCKET socket, const std::string& event, const std::string& data) {
+bool MCPHttpServer::SendSSEEvent(SOCKET socket, const std::string& event, const std::string& data) {
     std::ostringstream sse;
     sse << "event: " << event << "\r\n"
         << "data: " << data << "\r\n"
         << "\r\n";
     
     std::string sseStr = sse.str();
+    std::lock_guard<std::mutex> lock(m_sseSendMutex);
     if (!SendAll(socket, sseStr)) {
         Logger::Debug("Failed to send SSE event '{}'", event);
+        return false;
     }
+
+    return true;
 }
 
-std::string MCPHttpServer::CallMCPTool(const std::string& toolName, const nlohmann::json& arguments) {
+bool MCPHttpServer::BroadcastSSEEvent(const std::string& event, const std::string& data) {
+    std::vector<SOCKET> targets;
+    {
+        std::lock_guard<std::mutex> lock(m_sseClientSocketsMutex);
+        targets.assign(m_sseClientSockets.begin(), m_sseClientSockets.end());
+    }
+
+    if (targets.empty()) {
+        return false;
+    }
+
+    std::vector<SOCKET> disconnected;
+    bool sentAtLeastOne = false;
+    for (SOCKET clientSocket : targets) {
+        if (SendSSEEvent(clientSocket, event, data)) {
+            sentAtLeastOne = true;
+            continue;
+        }
+        disconnected.push_back(clientSocket);
+    }
+
+    if (!disconnected.empty()) {
+        std::lock_guard<std::mutex> lock(m_sseClientSocketsMutex);
+        for (SOCKET socket : disconnected) {
+            m_sseClientSockets.erase(socket);
+        }
+    }
+
+    return sentAtLeastOne;
+}
+
+MCPHttpServer::MCPToolCallResult MCPHttpServer::CallMCPTool(const std::string& toolName, const nlohmann::json& arguments) {
     auto& registry = MCPToolRegistry::Instance();
+    MCPToolCallResult result;
     
     // 鏌ユ壘宸ュ叿瀹氫箟
     auto toolOpt = registry.FindTool(toolName);
     if (!toolOpt.has_value()) {
         Logger::Error("Tool not found: {}", toolName);
-        return "Error: Tool '" + toolName + "' not found";
+        result.errorCode = -32601;
+        result.errorMessage = "Tool not found: " + toolName;
+        return result;
     }
     
     const MCPToolDefinition& tool = toolOpt.value();
@@ -1010,7 +1155,9 @@ std::string MCPHttpServer::CallMCPTool(const std::string& toolName, const nlohma
     std::string validationError = tool.ValidateArguments(arguments);
     if (!validationError.empty()) {
         Logger::Error("Tool argument validation failed: {}", validationError);
-        return "Error: " + validationError;
+        result.errorCode = -32602;
+        result.errorMessage = validationError;
+        return result;
     }
     
     Logger::Info("Executing tool: {} -> method: {}", toolName, tool.jsonrpcMethod);
@@ -1031,15 +1178,21 @@ std::string MCPHttpServer::CallMCPTool(const std::string& toolName, const nlohma
         
         if (response.error.has_value()) {
             Logger::Error("Tool execution failed: {}", response.error->message);
-            return "Error: " + response.error->message;
+            result.errorCode = response.error->code;
+            result.errorMessage = response.error->message;
+            return result;
         }
         
         // 杩斿洖鏍煎紡鍖栫殑缁撴灉
-        return response.result.dump(2);  // 缇庡寲杈撳嚭
+        result.success = true;
+        result.contentText = response.result.dump(2);  // 缇庡寲杈撳嚭
+        return result;
         
     } catch (const std::exception& e) {
         Logger::Error("Exception calling tool: {}", e.what());
-        return "Error: " + std::string(e.what());
+        result.errorCode = -32603;
+        result.errorMessage = std::string("Internal error: ") + e.what();
+        return result;
     }
 }
 

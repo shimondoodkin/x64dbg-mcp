@@ -27,6 +27,10 @@ bool ConfigEditor::Show(HMODULE hModule, HWND parentWindow, const std::string& c
         if (file.is_open()) {
             file >> s_config;
             file.close();
+            if (!s_config.is_object()) {
+                Logger::Warning("Config root is not a JSON object, fallback to default config");
+                s_config = ConfigManager::Instance().GetDefaultConfig();
+            }
             Logger::Info("Config file loaded successfully");
         } else {
             // 如果配置文件不存在,使用默认配置
@@ -70,6 +74,8 @@ bool ConfigEditor::Show(HMODULE hModule, HWND parentWindow, const std::string& c
 }
 
 INT_PTR CALLBACK ConfigEditor::DialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    (void)lParam;
+
     switch (uMsg) {
         case WM_INITDIALOG: {
             // 设置对话框标题
@@ -122,9 +128,9 @@ INT_PTR CALLBACK ConfigEditor::DialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
                 
                 case IDC_METHOD_REMOVE: {
                     HWND listBox = GetDlgItem(hwndDlg, IDC_METHODS_LIST);
-                    int sel = SendMessageA(listBox, LB_GETCURSEL, 0, 0);
+                    LRESULT sel = SendMessageA(listBox, LB_GETCURSEL, 0, 0);
                     if (sel != LB_ERR) {
-                        SendMessageA(listBox, LB_DELETESTRING, sel, 0);
+                        SendMessageA(listBox, LB_DELETESTRING, static_cast<WPARAM>(sel), 0);
                     }
                     return TRUE;
                 }
@@ -238,7 +244,8 @@ json ConfigEditor::GetConfigFromControls(HWND hwndDlg) {
     // Allowed methods
     json methodsArray = json::array();
     HWND listBox = GetDlgItem(hwndDlg, IDC_METHODS_LIST);
-    int count = SendMessageA(listBox, LB_GETCOUNT, 0, 0);
+    const LRESULT countResult = SendMessageA(listBox, LB_GETCOUNT, 0, 0);
+    const int count = (countResult < 0) ? 0 : static_cast<int>(countResult);
     
     for (int i = 0; i < count; i++) {
         char methodName[256];
@@ -252,7 +259,8 @@ json ConfigEditor::GetConfigFromControls(HWND hwndDlg) {
         IsDlgButtonChecked(hwndDlg, IDC_LOG_ENABLED) == BST_CHECKED;
     
     HWND comboBox = GetDlgItem(hwndDlg, IDC_LOG_LEVEL);
-    int sel = SendMessageA(comboBox, CB_GETCURSEL, 0, 0);
+    const LRESULT selectedIndex = SendMessageA(comboBox, CB_GETCURSEL, 0, 0);
+    const int sel = (selectedIndex == CB_ERR) ? -1 : static_cast<int>(selectedIndex);
     const char* levels[] = {"debug", "info", "warning", "error"};
     config["logging"]["level"] = levels[sel >= 0 && sel < 4 ? sel : 1];
     

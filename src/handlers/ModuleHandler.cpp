@@ -57,14 +57,25 @@ json ModuleHandler::List(const json& params) {
 }
 
 json ModuleHandler::Get(const json& params) {
-    if (!params.contains("name") && !params.contains("address")) {
-        throw InvalidParamsException("Missing required parameter: name or address");
+    if (!params.contains("module") && !params.contains("name") && !params.contains("address")) {
+        throw InvalidParamsException("Missing required parameter: module, name or address");
     }
     
-    Script::Module::ModuleInfo info;
+    Script::Module::ModuleInfo info = {};
     bool success = false;
     
-    if (params.contains("name")) {
+    if (params.contains("module")) {
+        std::string module = params["module"].get<std::string>();
+        try {
+            duint address = StringUtils::ParseAddress(module);
+            success = Script::Module::InfoFromAddr(address, &info);
+        } catch (...) {
+            success = false;
+        }
+        if (!success) {
+            success = Script::Module::InfoFromName(module.c_str(), &info);
+        }
+    } else if (params.contains("name")) {
         std::string name = params["name"].get<std::string>();
         success = Script::Module::InfoFromName(name.c_str(), &info);
     } else {

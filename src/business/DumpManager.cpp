@@ -235,6 +235,7 @@ DumpResult DumpManager::AutoUnpackAndDump(
     const std::string& moduleNameOrAddress,
     const std::string& outputPath,
     int maxIterations,
+    const std::string& oepStrategy,
     ProgressCallback progressCallback)
 {
     DumpResult result;
@@ -251,6 +252,10 @@ DumpResult DumpManager::AutoUnpackAndDump(
     };
     
     try {
+        if (maxIterations <= 0) {
+            throw InvalidParamsException("maxIterations must be greater than zero");
+        }
+
         updateProgress(DumpProgress::Stage::Preparing, 0, "Analyzing target module");
         
         auto moduleBaseOpt = ParseModuleOrAddress(moduleNameOrAddress);
@@ -285,7 +290,7 @@ DumpResult DumpManager::AutoUnpackAndDump(
                           "Unpacking iteration " + std::to_string(iteration + 1));
             
             // 尝试检测OEP
-            auto oepOpt = DetectOEP(moduleBase);
+            auto oepOpt = DetectOEP(moduleBase, oepStrategy);
             if (!oepOpt.has_value()) {
                 Logger::Warning("Failed to detect OEP in iteration {}", iteration + 1);
                 continue;

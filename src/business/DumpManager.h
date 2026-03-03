@@ -133,6 +133,7 @@ public:
         const std::string& moduleNameOrAddress,
         const std::string& outputPath,
         int maxIterations = 3,
+        const std::string& oepStrategy = "entropy",
         ProgressCallback progressCallback = nullptr
     );
     

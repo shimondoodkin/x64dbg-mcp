@@ -237,83 +237,47 @@ MCPResourceContent MCPResourceRegistry::ReadResource(const std::string& uri) con
     auto& dispatcher = MethodDispatcher::Instance();
     
     try {
+        const auto dispatchResourceMethod = [&dispatcher](const std::string& method) -> std::string {
+            JSONRPCRequest request;
+            request.jsonrpc = "2.0";
+            request.method = method;
+            request.id = 1;
+            request.params = json::object();
+
+            JSONRPCResponse response = dispatcher.Dispatch(request);
+            if (response.error.has_value()) {
+                return json{
+                    {"error", {
+                        {"code", response.error->code},
+                        {"message", response.error->message},
+                        {"data", response.error->data}
+                    }}
+                }.dump(2);
+            }
+            return response.result.dump(2);
+        };
+
         // Parse URI to determine what resource to read
         if (uri == "debugger://state/current") {
-            // Call debug.get_state
-            JSONRPCRequest request;
-            request.jsonrpc = "2.0";
-            request.method = "debug.get_state";
-            request.id = 1;
-            request.params = json::object();
-            
-            JSONRPCResponse response = dispatcher.Dispatch(request);
-            content.text = response.result.dump(2);
+            content.text = dispatchResourceMethod("debug.get_state");
         }
         else if (uri == "debugger://registers/all") {
-            // Call register.list
-            JSONRPCRequest request;
-            request.jsonrpc = "2.0";
-            request.method = "register.list";
-            request.id = 1;
-            request.params = json::object();
-            
-            JSONRPCResponse response = dispatcher.Dispatch(request);
-            content.text = response.result.dump(2);
+            content.text = dispatchResourceMethod("register.list");
         }
         else if (uri == "debugger://modules/list") {
-            // Call module.list
-            JSONRPCRequest request;
-            request.jsonrpc = "2.0";
-            request.method = "module.list";
-            request.id = 1;
-            request.params = json::object();
-            
-            JSONRPCResponse response = dispatcher.Dispatch(request);
-            content.text = response.result.dump(2);
+            content.text = dispatchResourceMethod("module.list");
         }
         else if (uri == "debugger://threads/list") {
-            // Call thread.list
-            JSONRPCRequest request;
-            request.jsonrpc = "2.0";
-            request.method = "thread.list";
-            request.id = 1;
-            request.params = json::object();
-            
-            JSONRPCResponse response = dispatcher.Dispatch(request);
-            content.text = response.result.dump(2);
+            content.text = dispatchResourceMethod("thread.list");
         }
         else if (uri == "debugger://memory/map") {
-            // Call memory.enumerate
-            JSONRPCRequest request;
-            request.jsonrpc = "2.0";
-            request.method = "memory.enumerate";
-            request.id = 1;
-            request.params = json::object();
-            
-            JSONRPCResponse response = dispatcher.Dispatch(request);
-            content.text = response.result.dump(2);
+            content.text = dispatchResourceMethod("memory.enumerate");
         }
         else if (uri == "debugger://breakpoints/all") {
-            // Call breakpoint.list
-            JSONRPCRequest request;
-            request.jsonrpc = "2.0";
-            request.method = "breakpoint.list";
-            request.id = 1;
-            request.params = json::object();
-            
-            JSONRPCResponse response = dispatcher.Dispatch(request);
-            content.text = response.result.dump(2);
+            content.text = dispatchResourceMethod("breakpoint.list");
         }
         else if (uri == "debugger://stack/trace") {
-            // Call stack.get_trace
-            JSONRPCRequest request;
-            request.jsonrpc = "2.0";
-            request.method = "stack.get_trace";
-            request.id = 1;
-            request.params = json::object();
-            
-            JSONRPCResponse response = dispatcher.Dispatch(request);
-            content.text = response.result.dump(2);
+            content.text = dispatchResourceMethod("stack.get_trace");
         }
         // Handle template URIs (with parameters)
         else if (uri.find("memory://") == 0) {

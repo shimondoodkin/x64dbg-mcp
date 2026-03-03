@@ -111,9 +111,19 @@ nlohmann::json DumpHandler::AutoUnpackAndDump(const nlohmann::json& params) {
     std::string module = params["module"].get<std::string>();
     std::string outputPath = params["output_path"].get<std::string>();
     int maxIterations = params.value("max_iterations", 3);
+    std::string strategy = params.value("strategy", "entropy");
+
+    static const std::set<std::string> validStrategies = {
+        "entropy", "code_analysis", "api_calls", "tls", "entrypoint"
+    };
+    if (validStrategies.find(strategy) == validStrategies.end()) {
+        throw InvalidParamsException(
+            "Invalid strategy '" + strategy + "'. Valid strategies: entropy, code_analysis, api_calls, tls, entrypoint"
+        );
+    }
     
     auto& manager = DumpManager::Instance();
-    auto result = manager.AutoUnpackAndDump(module, outputPath, maxIterations, nullptr);
+    auto result = manager.AutoUnpackAndDump(module, outputPath, maxIterations, strategy, nullptr);
     
     nlohmann::json response = DumpResultToJson(result);
     
