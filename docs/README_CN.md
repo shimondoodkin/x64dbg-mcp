@@ -216,4 +216,4 @@ copy config.json <x64dbg-path>\x32\plugins\x32dbg-mcp\
 
 完整历史请查看：
 
-- [CHANGELOG_CN.md](../CHANGELOG_CN.md)
+- [CHANGELOG_CN.md](CHANGELOG_CN.md)
