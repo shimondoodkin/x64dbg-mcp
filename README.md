@@ -538,6 +538,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - GitHub Issues: For bug reports and feature requests
 
+## Reference
+
+https://github.com/Wasdubya/x64dbgMCP
+
 ---
 
 **Note**: This is experimental software. Use at your own risk. Always test in a safe environment before using with critical applications.
