@@ -7,6 +7,122 @@
 #include <sstream>
 #include <vector>
 #include <filesystem>
+#include <unordered_map>
+
+namespace {
+// Scroll-state kept in file scope because the dialog is modal and single-instance.
+std::unordered_map<HWND, int> g_originalY;   // original client-Y of each child control
+int g_scrollPos = 0;                          // current scroll offset (pixels)
+int g_scrollMax = 0;                          // max scroll offset (pixels)
+int g_visibleHeight = 0;                      // client height we fit the dialog into
+
+BOOL CALLBACK RecordChildY(HWND hChild, LPARAM lParam) {
+    HWND hDlg = reinterpret_cast<HWND>(lParam);
+    // Only record direct children of the dialog, not internals of composite
+    // controls like the listbox's own scrollbars.
+    if (GetParent(hChild) != hDlg) return TRUE;
+    RECT rc;
+    GetWindowRect(hChild, &rc);
+    POINT tl{ rc.left, rc.top };
+    ScreenToClient(hDlg, &tl);
+    g_originalY[hChild] = tl.y;
+    return TRUE;
+}
+
+struct ApplyScrollCtx { HWND hDlg; int delta; };
+
+BOOL CALLBACK ApplyScrollToChild(HWND hChild, LPARAM lParam) {
+    auto* ctx = reinterpret_cast<ApplyScrollCtx*>(lParam);
+    auto it = g_originalY.find(hChild);
+    if (it == g_originalY.end()) return TRUE;
+    RECT rc;
+    GetWindowRect(hChild, &rc);
+    POINT tl{ rc.left, rc.top };
+    ScreenToClient(ctx->hDlg, &tl);
+    const int newY = it->second - g_scrollPos;
+    (void)ctx->delta;
+    SetWindowPos(hChild, nullptr, tl.x, newY, 0, 0,
+                 SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+    return TRUE;
+}
+
+void UpdateScroll(HWND hDlg, int newPos) {
+    if (newPos < 0) newPos = 0;
+    if (newPos > g_scrollMax) newPos = g_scrollMax;
+    if (newPos == g_scrollPos) return;
+    g_scrollPos = newPos;
+
+    SCROLLINFO si{};
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_POS;
+    si.nPos = g_scrollPos;
+    SetScrollInfo(hDlg, SB_VERT, &si, TRUE);
+
+    ApplyScrollCtx ctx{ hDlg, 0 };
+    EnumChildWindows(hDlg, ApplyScrollToChild, reinterpret_cast<LPARAM>(&ctx));
+    InvalidateRect(hDlg, nullptr, TRUE);
+}
+
+void SetupScrollingIfNeeded(HWND hDlg) {
+    g_originalY.clear();
+    g_scrollPos = 0;
+    g_scrollMax = 0;
+
+    // Record every child's original client Y, then compute content height.
+    EnumChildWindows(hDlg, RecordChildY, reinterpret_cast<LPARAM>(hDlg));
+
+    int contentBottom = 0;
+    for (const auto& kv : g_originalY) {
+        RECT rc;
+        GetWindowRect(kv.first, &rc);
+        POINT br{ rc.right, rc.bottom };
+        ScreenToClient(hDlg, &br);
+        if (br.y > contentBottom) contentBottom = br.y;
+    }
+    contentBottom += 10; // bottom padding
+
+    // Find the screen work area (excludes taskbar).
+    HMONITOR hMon = MonitorFromWindow(hDlg, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{ sizeof(mi) };
+    GetMonitorInfoW(hMon, &mi);
+    const int workH = mi.rcWork.bottom - mi.rcWork.top;
+
+    // Current window size incl. caption/frame.
+    RECT winRc;
+    GetWindowRect(hDlg, &winRc);
+    const int winH = winRc.bottom - winRc.top;
+
+    RECT clientRc;
+    GetClientRect(hDlg, &clientRc);
+    const int frameChrome = winH - (clientRc.bottom - clientRc.top);
+
+    // If the dialog fits, leave everything alone.
+    const int maxAllowedWinH = workH - 40; // leave some room
+    if (winH <= maxAllowedWinH && contentBottom <= clientRc.bottom) {
+        g_visibleHeight = clientRc.bottom;
+        return;
+    }
+
+    // Shrink the window to fit the screen.
+    const int newWinH = (winH > maxAllowedWinH) ? maxAllowedWinH : winH;
+    const int newClientH = newWinH - frameChrome;
+    SetWindowPos(hDlg, nullptr, 0, 0, winRc.right - winRc.left, newWinH,
+                 SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
+
+    g_visibleHeight = newClientH;
+    g_scrollMax = contentBottom - newClientH;
+    if (g_scrollMax < 0) g_scrollMax = 0;
+
+    SCROLLINFO si{};
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+    si.nMin = 0;
+    si.nMax = contentBottom;   // range is content height; nPage shrinks thumb
+    si.nPage = newClientH;
+    si.nPos = 0;
+    SetScrollInfo(hDlg, SB_VERT, &si, TRUE);
+}
+} // anonymous namespace
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -83,14 +199,47 @@ INT_PTR CALLBACK ConfigEditor::DialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
             
             // 初始化控件
             LoadConfigToControls(hwndDlg, s_config);
-            
-            // 居中显示
+
+            // If the dialog is taller than the screen, shrink it and enable scrolling.
+            SetupScrollingIfNeeded(hwndDlg);
+
+            // 居中显示 (use the possibly-resized dimensions)
             RECT rc;
             GetWindowRect(hwndDlg, &rc);
             int x = (GetSystemMetrics(SM_CXSCREEN) - (rc.right - rc.left)) / 2;
             int y = (GetSystemMetrics(SM_CYSCREEN) - (rc.bottom - rc.top)) / 2;
+            if (y < 0) y = 0;
             SetWindowPos(hwndDlg, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-            
+
+            return TRUE;
+        }
+
+        case WM_VSCROLL: {
+            SCROLLINFO si{};
+            si.cbSize = sizeof(si);
+            si.fMask = SIF_ALL;
+            GetScrollInfo(hwndDlg, SB_VERT, &si);
+            int newPos = si.nPos;
+            const int lineStep = 20;
+            const int pageStep = (si.nPage > 0) ? static_cast<int>(si.nPage) - lineStep : 100;
+            switch (LOWORD(wParam)) {
+                case SB_LINEUP:        newPos -= lineStep; break;
+                case SB_LINEDOWN:      newPos += lineStep; break;
+                case SB_PAGEUP:        newPos -= pageStep; break;
+                case SB_PAGEDOWN:      newPos += pageStep; break;
+                case SB_THUMBTRACK:
+                case SB_THUMBPOSITION: newPos = si.nTrackPos; break;
+                case SB_TOP:           newPos = 0; break;
+                case SB_BOTTOM:        newPos = g_scrollMax; break;
+            }
+            UpdateScroll(hwndDlg, newPos);
+            return TRUE;
+        }
+
+        case WM_MOUSEWHEEL: {
+            const int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+            const int lines = -delta / 40; // ~3 lines per notch at default res.
+            UpdateScroll(hwndDlg, g_scrollPos + lines * 10);
             return TRUE;
         }
         
