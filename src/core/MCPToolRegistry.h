@@ -74,6 +74,13 @@ public:
      * @brief 生成 tools/list 响应
      */
     json GenerateToolsListResponse() const;
+
+    /**
+     * @brief 生成分页的 tools/list 响应。
+     * cursor 为空表示从头开始；返回的 result 中如果还有更多条目，
+     * 会包含 nextCursor 字段（MCP 规范）。
+     */
+    json GenerateToolsListResponse(const std::string& cursor, size_t pageSize) const;
     
     /**
      * @brief 注册所有默认工具

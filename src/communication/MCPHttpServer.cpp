@@ -864,17 +864,34 @@ std::string MCPHttpServer::HandleMCPMethod(const std::string& method, const std:
         return ""; // 涓嶈繑鍥炲搷搴?
     }
     else if (method == "tools/list") {
+        // MCP spec: optional  enables pagination across
+        // multiple  calls. We page in batches of 200.
+        std::string cursor;
+        try {
+            const json req = json::parse(body);
+            if (req.is_object() && req.contains("params") && req["params"].is_object()) {
+                const auto& params = req["params"];
+                if (params.contains("cursor") && params["cursor"].is_string()) {
+                    cursor = params["cursor"].get<std::string>();
+                }
+            }
+        } catch (const json::exception&) {
+            // Body already validated upstream; fall through with empty cursor.
+        }
+
         auto& registry = MCPToolRegistry::Instance();
-        json result = registry.GenerateToolsListResponse();
-        
-        Logger::Info("Handling tools/list request, have {} tools", result["tools"].size());
-        
+        json result = registry.GenerateToolsListResponse(cursor, 200);
+
+        Logger::Info("Handling tools/list request, returning {} tools{}",
+                     result["tools"].size(),
+                     result.contains("nextCursor") ? " (more available)" : "");
+
         json response = {
             {"jsonrpc", "2.0"},
             {"id", requestId == "null" ? nullptr : json::parse(requestId)},
             {"result", result}
         };
-        
+
         return response.dump();
     }
     else if (method == "tools/call") {

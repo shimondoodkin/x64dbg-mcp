@@ -138,14 +138,32 @@ std::optional<MCPToolDefinition> MCPToolRegistry::FindTool(const std::string& na
 
 json MCPToolRegistry::GenerateToolsListResponse() const {
     json tools_array = json::array();
-    
+
     for (const auto& pair : m_tools) {
         tools_array.push_back(pair.second.ToMCPFormat());
     }
-    
+
     return {
         {"tools", tools_array}
     };
+}
+
+json MCPToolRegistry::GenerateToolsListResponse(const std::string& cursor, size_t pageSize) const {
+    if (pageSize == 0) {
+        pageSize = 100;
+    }
+
+    auto it = cursor.empty() ? m_tools.begin() : m_tools.lower_bound(cursor);
+    json tools_array = json::array();
+    for (size_t i = 0; i < pageSize && it != m_tools.end(); ++i, ++it) {
+        tools_array.push_back(it->second.ToMCPFormat());
+    }
+
+    json result = { {"tools", tools_array} };
+    if (it != m_tools.end()) {
+        result["nextCursor"] = it->first;
+    }
+    return result;
 }
 
 void MCPToolRegistry::RegisterDefaultTools() {

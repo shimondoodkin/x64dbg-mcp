@@ -122,10 +122,22 @@ inline std::vector<uint8_t> HexToBytes(const std::string& hex) {
         cleanHex = "0" + cleanHex;
     }
     
+    auto hexNibble = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+        if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+        return -1;
+    };
+
+    bytes.reserve(cleanHex.length() / 2);
     for (size_t i = 0; i < cleanHex.length(); i += 2) {
-        std::string byteStr = cleanHex.substr(i, 2);
-        uint8_t byte = static_cast<uint8_t>(std::stoi(byteStr, nullptr, 16));
-        bytes.push_back(byte);
+        const int hi = hexNibble(cleanHex[i]);
+        const int lo = hexNibble(cleanHex[i + 1]);
+        if (hi < 0 || lo < 0) {
+            throw std::invalid_argument(
+                std::string("Invalid hex byte at offset ") + std::to_string(i));
+        }
+        bytes.push_back(static_cast<uint8_t>((hi << 4) | lo));
     }
     
     return bytes;
@@ -188,7 +200,18 @@ inline uint64_t ParseAddress(const std::string& str) {
         base = 16;
     }
     
-    return std::stoull(cleanStr, nullptr, base);
+    try {
+        size_t consumed = 0;
+        const uint64_t value = std::stoull(cleanStr, &consumed, base);
+        if (consumed != cleanStr.size()) {
+            throw std::invalid_argument("Trailing characters in address: " + str);
+        }
+        return value;
+    } catch (const std::out_of_range&) {
+        throw std::invalid_argument("Address out of range: " + str);
+    } catch (const std::invalid_argument&) {
+        throw std::invalid_argument("Invalid address: " + str);
+    }
 }
 
 /**

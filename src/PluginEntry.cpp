@@ -333,9 +333,8 @@ static void CB_MenuEntry(CBTYPE cbType, void* callbackInfo) {
         }
         else if (info->hEntry == MENU_ABOUT) {
             // 鍏充�?
-            char aboutMsg[256];
-            sprintf_s(aboutMsg, "[MCP] %s Plugin v%s", PLUGIN_DISPLAY_NAME, PLUGIN_VERSION);
-            _plugin_logputs(aboutMsg);
+            const std::string aboutMsg = std::string("[MCP] ") + PLUGIN_DISPLAY_NAME + " Plugin v" + PLUGIN_VERSION;
+            _plugin_logputs(aboutMsg.c_str());
             _plugin_logputs("[MCP] Provides JSON-RPC debugging interface");
             _plugin_logputs("[MCP] https://github.com/SetsunaYukiOvO/x64dbg-mcp");
         }
