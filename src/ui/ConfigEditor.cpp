@@ -260,29 +260,6 @@ INT_PTR CALLBACK ConfigEditor::DialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
                     return TRUE;
                 }
                 
-                case IDC_METHOD_ADD: {
-                    char methodName[256] = {0};
-                    GetDlgItemTextA(hwndDlg, IDC_METHOD_INPUT, methodName, sizeof(methodName));
-                    
-                    if (strlen(methodName) > 0) {
-                        // 添加到列表框
-                        HWND listBox = GetDlgItem(hwndDlg, IDC_METHODS_LIST);
-                        SendMessageA(listBox, LB_ADDSTRING, 0, (LPARAM)methodName);
-                        
-                        // 清空输入框
-                        SetDlgItemTextA(hwndDlg, IDC_METHOD_INPUT, "");
-                    }
-                    return TRUE;
-                }
-                
-                case IDC_METHOD_REMOVE: {
-                    HWND listBox = GetDlgItem(hwndDlg, IDC_METHODS_LIST);
-                    LRESULT sel = SendMessageA(listBox, LB_GETCURSEL, 0, 0);
-                    if (sel != LB_ERR) {
-                        SendMessageA(listBox, LB_DELETESTRING, static_cast<WPARAM>(sel), 0);
-                    }
-                    return TRUE;
-                }
             }
             break;
         }
@@ -313,17 +290,6 @@ void ConfigEditor::LoadConfigToControls(HWND hwndDlg, const json& config) {
         perms.value("allow_script_execution", true) ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(hwndDlg, IDC_ALLOW_BREAKPOINT_MOD, 
         perms.value("allow_breakpoint_modification", true) ? BST_CHECKED : BST_UNCHECKED);
-    
-    // Allowed methods
-    HWND listBox = GetDlgItem(hwndDlg, IDC_METHODS_LIST);
-    SendMessageA(listBox, LB_RESETCONTENT, 0, 0);
-    
-    auto methods = perms.value("allowed_methods", json::array());
-    for (const auto& method : methods) {
-        if (method.is_string()) {
-            SendMessageA(listBox, LB_ADDSTRING, 0, (LPARAM)method.get<std::string>().c_str());
-        }
-    }
     
     // Logging
     auto logging = config.value("logging", json::object());
@@ -389,19 +355,6 @@ json ConfigEditor::GetConfigFromControls(HWND hwndDlg) {
         IsDlgButtonChecked(hwndDlg, IDC_ALLOW_SCRIPT_EXEC) == BST_CHECKED;
     config["permissions"]["allow_breakpoint_modification"] = 
         IsDlgButtonChecked(hwndDlg, IDC_ALLOW_BREAKPOINT_MOD) == BST_CHECKED;
-    
-    // Allowed methods
-    json methodsArray = json::array();
-    HWND listBox = GetDlgItem(hwndDlg, IDC_METHODS_LIST);
-    const LRESULT countResult = SendMessageA(listBox, LB_GETCOUNT, 0, 0);
-    const int count = (countResult < 0) ? 0 : static_cast<int>(countResult);
-    
-    for (int i = 0; i < count; i++) {
-        char methodName[256];
-        SendMessageA(listBox, LB_GETTEXT, i, (LPARAM)methodName);
-        methodsArray.push_back(methodName);
-    }
-    config["permissions"]["allowed_methods"] = methodsArray;
     
     // Logging
     config["logging"]["enabled"] = 

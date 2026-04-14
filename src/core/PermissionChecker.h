@@ -1,7 +1,5 @@
 #pragma once
 #include <string>
-#include <vector>
-#include <unordered_set>
 #include <mutex>
 
 namespace MCP {
@@ -20,13 +18,6 @@ public:
      * @brief 初始化权限配置
      */
     void Initialize();
-    
-    /**
-     * @brief 检查方法是否被允许
-     * @param method 方法名
-     * @return 是否允许
-     */
-    bool IsMethodAllowed(const std::string& method) const;
     
     /**
      * @brief 检查是否允许内存写入
@@ -54,22 +45,6 @@ public:
      */
     bool CanWrite() const;
     
-    /**
-     * @brief 添加允许的方法
-     * @param method 方法名或模式（支持通配符）
-     */
-    void AddAllowedMethod(const std::string& method);
-    
-    /**
-     * @brief 移除允许的方法
-     * @param method 方法名
-     */
-    void RemoveAllowedMethod(const std::string& method);
-    
-    /**
-     * @brief 清空允许列表
-     */
-    void ClearAllowedMethods();
 
 private:
     PermissionChecker() = default;
@@ -77,9 +52,6 @@ private:
     PermissionChecker(const PermissionChecker&) = delete;
     PermissionChecker& operator=(const PermissionChecker&) = delete;
     
-    bool MatchesPattern(const std::string& pattern, const std::string& method) const;
-    
-    std::unordered_set<std::string> m_allowedMethods;
     mutable std::mutex m_mutex;
 };
 

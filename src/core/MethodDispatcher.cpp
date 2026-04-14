@@ -33,9 +33,6 @@ JSONRPCResponse MethodDispatcher::Dispatch(const JSONRPCRequest& request) {
     
     try {
         // 濡偓閺屻儲娼堥梽?
-        if (!PermissionChecker::Instance().IsMethodAllowed(request.method)) {
-            throw PermissionDeniedException("Method not allowed: " + request.method);
-        }
         
         // 閹笛嗩攽閺傝纭?
         json result = ExecuteMethod(request.method, request.params);

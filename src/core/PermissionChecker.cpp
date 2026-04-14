@@ -1,10 +1,6 @@
 #include "PermissionChecker.h"
 #include "ConfigManager.h"
 #include "Logger.h"
-#include "../utils/StringUtils.h"
-#include <nlohmann/json.hpp>
-
-using json = nlohmann::json;
 
 namespace MCP {
 
@@ -14,63 +10,11 @@ PermissionChecker& PermissionChecker::Instance() {
 }
 
 void PermissionChecker::Initialize() {
+    // Method-level allowlist was removed; this hook now just confirms the
+    // boolean permission flags were consulted at least once. Write-gates
+    // (memory/register/script/breakpoint) are still enforced per-handler.
     std::lock_guard<std::mutex> lock(m_mutex);
-
-    m_allowedMethods.clear();
-
-    auto& config = ConfigManager::Instance();
-
-    try {
-        json allowedMethods = config.Get<json>("permissions.allowed_methods", json::array());
-
-        if (allowedMethods.is_array()) {
-            for (const auto& method : allowedMethods) {
-                if (method.is_string()) {
-                    std::string methodStr = method.get<std::string>();
-                    m_allowedMethods.insert(methodStr);
-                    Logger::Debug("Added allowed method pattern: {}", methodStr);
-                }
-            }
-        }
-
-        Logger::Info("PermissionChecker initialized with {} allowed patterns",
-                    m_allowedMethods.size());
-    } catch (const std::exception& e) {
-        Logger::Error("Failed to load permissions from config: {}", e.what());
-
-        // Fallback to default config permissions instead of allow-all.
-        try {
-            json defaults = config.GetDefaultConfig();
-            json allowedMethods = defaults["permissions"]["allowed_methods"];
-            if (allowedMethods.is_array()) {
-                for (const auto& method : allowedMethods) {
-                    if (method.is_string()) {
-                        m_allowedMethods.insert(method.get<std::string>());
-                    }
-                }
-            }
-            Logger::Warning("PermissionChecker fell back to default allowed methods");
-        } catch (const std::exception& fallbackError) {
-            Logger::Error("Failed to load default permissions fallback: {}", fallbackError.what());
-        }
-    }
-}
-
-bool PermissionChecker::IsMethodAllowed(const std::string& method) const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-
-    if (m_allowedMethods.count(method) > 0) {
-        return true;
-    }
-
-    for (const auto& pattern : m_allowedMethods) {
-        if (MatchesPattern(pattern, method)) {
-            return true;
-        }
-    }
-
-    Logger::Warning("Method not allowed: {}", method);
-    return false;
+    Logger::Info("PermissionChecker initialized (method allowlist disabled)");
 }
 
 bool PermissionChecker::IsMemoryWriteAllowed() const {
@@ -91,7 +35,7 @@ bool PermissionChecker::IsBreakpointModificationAllowed() const {
 
 bool PermissionChecker::CanWrite() const {
     // Keep backward compatibility with "permissions.allow_write" while
-    // honoring fine-grained permission flags when that key is absent/false.
+    // also treating any specific write permission as sufficient.
     if (ConfigManager::Instance().Get<bool>("permissions.allow_write", false)) {
         return true;
     }
@@ -100,32 +44,6 @@ bool PermissionChecker::CanWrite() const {
            IsRegisterWriteAllowed() ||
            IsScriptExecutionAllowed() ||
            IsBreakpointModificationAllowed();
-}
-
-void PermissionChecker::AddAllowedMethod(const std::string& method) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_allowedMethods.insert(method);
-    Logger::Debug("Added allowed method: {}", method);
-}
-
-void PermissionChecker::RemoveAllowedMethod(const std::string& method) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_allowedMethods.erase(method);
-    Logger::Debug("Removed allowed method: {}", method);
-}
-
-void PermissionChecker::ClearAllowedMethods() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_allowedMethods.clear();
-    Logger::Warning("Cleared all allowed methods");
-}
-
-bool PermissionChecker::MatchesPattern(const std::string& pattern, const std::string& method) const {
-    if (pattern == "*") {
-        return true;
-    }
-
-    return StringUtils::WildcardMatch(pattern, method);
 }
 
 } // namespace MCP

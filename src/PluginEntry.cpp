@@ -486,23 +486,7 @@ extern "C" __declspec(dllexport) bool pluginit(PLUG_INITSTRUCT* initStruct) {
     "allow_memory_write": true,
     "allow_register_write": true,
     "allow_script_execution": true,
-    "allow_breakpoint_modification": true,
-    "allowed_methods": [
-      "debug.*",
-      "register.*",
-      "memory.*",
-      "breakpoint.*",
-      "disasm.*",
-      "disassembly.*",
-      "module.*",
-      "symbol.*",
-      "thread.*",
-      "stack.*",
-      "comment.*",
-      "script.*",
-      "context.*",
-      "dump.*"
-    ]
+    "allow_breakpoint_modification": true
   },
     "logging": {
         "enabled": true,

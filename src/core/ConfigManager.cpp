@@ -25,12 +25,6 @@ json ConfigManager::CreateDefaultConfig() const {
     config["permissions"]["allow_register_write"] = true;
     config["permissions"]["allow_script_execution"] = true;
     config["permissions"]["allow_breakpoint_modification"] = true;
-    config["permissions"]["allowed_methods"] = json::array({
-        "debug.*", "register.*", "memory.*", "breakpoint.*",
-        "disasm.*", "disassembly.*", "module.*", "symbol.*",
-        "thread.*", "stack.*", "comment.*", "script.*",
-        "context.*", "dump.*", "native.*"
-    });
     
     // Logging
     config["logging"]["enabled"] = true;
