@@ -853,7 +853,7 @@ std::string MCPHttpServer::HandleMCPMethod(const std::string& method, const std:
                 }},
                 {"serverInfo", {
                     {"name", "x64dbg-mcp"},
-                    {"version", "1.0.3"}
+                    {"version", "1.0.4"}
                 }}
             }}
         }).dump();
