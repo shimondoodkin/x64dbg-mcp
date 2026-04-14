@@ -1,0 +1,106 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+            triplet: x64-windows
+            xdbg_arch: x64
+            artifact: x64dbg_mcp.dp64
+          - arch: x86
+            cmake_arch: Win32
+            triplet: x86-windows
+            xdbg_arch: x86
+            artifact: x32dbg_mcp.dp32
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Bootstrap vcpkg
+        shell: cmd
+        run: |
+          if not exist "%RUNNER_TEMP%\vcpkg" (
+            git clone --depth 1 https://github.com/microsoft/vcpkg.git "%RUNNER_TEMP%\vcpkg"
+          )
+          call "%RUNNER_TEMP%\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+
+      - name: Cache vcpkg installed
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\vcpkg\installed
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json') }}
+
+      - name: Configure (CMake)
+        shell: cmd
+        run: |
+          cmake -B build_${{ matrix.arch }} ^
+                -G "Visual Studio 17 2022" ^
+                -A ${{ matrix.cmake_arch }} ^
+                -DCMAKE_BUILD_TYPE=Release ^
+                -DCMAKE_TOOLCHAIN_FILE="%RUNNER_TEMP%\vcpkg\scripts\buildsystems\vcpkg.cmake" ^
+                -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} ^
+                -DVCPKG_HOST_TRIPLET=x64-windows ^
+                -DXDBG_ARCH=${{ matrix.xdbg_arch }}
+
+      - name: Build
+        shell: cmd
+        run: cmake --build build_${{ matrix.arch }} --config Release -j
+
+      - name: Stage artifact
+        shell: cmd
+        run: |
+          if not exist dist mkdir dist
+          copy /Y "build_${{ matrix.arch }}\bin\Release\${{ matrix.artifact }}" "dist\"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/x64dbg_mcp.dp64
+            dist/x32dbg_mcp.dp32
