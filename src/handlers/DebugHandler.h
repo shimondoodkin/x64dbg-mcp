@@ -31,6 +31,14 @@ public:
      * @brief debug.run_pass_exception - continue, passing the pending exception
      */
     static json RunPassException(const json& params);
+    static json RunSwallowException(const json& params);
+    static json StepIntoPassException(const json& params);
+    static json StepIntoSwallowException(const json& params);
+    static json StepOverPassException(const json& params);
+    static json StepOverSwallowException(const json& params);
+    static json StepOutPassException(const json& params);
+    static json StepOutSwallowException(const json& params);
+    static json SkipInstruction(const json& params);
     
     /**
      * @brief debug.pause - 暂停执行

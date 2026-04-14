@@ -190,6 +190,62 @@ void MCPToolRegistry::RegisterDefaultTools() {
         "debug.run_pass_exception",
         {}
     });
+
+    RegisterTool({
+        "debug_run_swallow_exception",
+        "Continue execution and swallow the pending exception (x64dbg serun)",
+        "debug.run_swallow_exception",
+        {}
+    });
+
+    RegisterTool({
+        "debug_step_into_pass_exception",
+        "Step into and pass the pending exception (x64dbg esti, Shift+F7)",
+        "debug.step_into_pass_exception",
+        {}
+    });
+
+    RegisterTool({
+        "debug_step_into_swallow_exception",
+        "Step into and swallow the pending exception (x64dbg ssti, Ctrl+Alt+Shift+F7)",
+        "debug.step_into_swallow_exception",
+        {}
+    });
+
+    RegisterTool({
+        "debug_step_over_pass_exception",
+        "Step over and pass the pending exception (x64dbg esto, Shift+F8)",
+        "debug.step_over_pass_exception",
+        {}
+    });
+
+    RegisterTool({
+        "debug_step_over_swallow_exception",
+        "Step over and swallow the pending exception (x64dbg ssto, Ctrl+Alt+Shift+F8)",
+        "debug.step_over_swallow_exception",
+        {}
+    });
+
+    RegisterTool({
+        "debug_step_out_pass_exception",
+        "Run to return and pass the pending exception (x64dbg ertr, Ctrl+Shift+F9)",
+        "debug.step_out_pass_exception",
+        {}
+    });
+
+    RegisterTool({
+        "debug_step_out_swallow_exception",
+        "Run to return and swallow the pending exception (x64dbg sertr)",
+        "debug.step_out_swallow_exception",
+        {}
+    });
+
+    RegisterTool({
+        "debug_skip_instruction",
+        "Skip the next instruction at cip without executing it (x64dbg skip)",
+        "debug.skip_instruction",
+        {}
+    });
     
     RegisterTool({
         "debug_pause",

@@ -14,6 +14,14 @@ void DebugHandler::RegisterMethods() {
     dispatcher.RegisterMethod("debug.get_state", GetState);
     dispatcher.RegisterMethod("debug.run", Run);
     dispatcher.RegisterMethod("debug.run_pass_exception", RunPassException);
+    dispatcher.RegisterMethod("debug.run_swallow_exception", RunSwallowException);
+    dispatcher.RegisterMethod("debug.step_into_pass_exception", StepIntoPassException);
+    dispatcher.RegisterMethod("debug.step_into_swallow_exception", StepIntoSwallowException);
+    dispatcher.RegisterMethod("debug.step_over_pass_exception", StepOverPassException);
+    dispatcher.RegisterMethod("debug.step_over_swallow_exception", StepOverSwallowException);
+    dispatcher.RegisterMethod("debug.step_out_pass_exception", StepOutPassException);
+    dispatcher.RegisterMethod("debug.step_out_swallow_exception", StepOutSwallowException);
+    dispatcher.RegisterMethod("debug.skip_instruction", SkipInstruction);
     dispatcher.RegisterMethod("debug.pause", Pause);
     dispatcher.RegisterMethod("debug.step_into", StepInto);
     dispatcher.RegisterMethod("debug.step_over", StepOver);
@@ -102,6 +110,69 @@ json DebugHandler::RunPassException(const json& params) {
         }
     }
 
+    return result;
+}
+
+json DebugHandler::RunSwallowException(const json& params) {
+    (void)params;
+    auto& controller = DebugController::Instance();
+    bool success = controller.RunSwallowException();
+    json result = { {"success", success} };
+    Sleep(50);
+    DebugState state = controller.GetState();
+    result["state"] = StateToString(state);
+    if (controller.IsPaused()) {
+        try { result["rip"] = StringUtils::FormatAddress(controller.GetInstructionPointer()); }
+        catch (...) {}
+    }
+    return result;
+}
+
+json DebugHandler::StepIntoPassException(const json& params) {
+    (void)params;
+    uint64_t rip = DebugController::Instance().StepIntoPassException();
+    return { {"rip", StringUtils::FormatAddress(rip)} };
+}
+
+json DebugHandler::StepIntoSwallowException(const json& params) {
+    (void)params;
+    uint64_t rip = DebugController::Instance().StepIntoSwallowException();
+    return { {"rip", StringUtils::FormatAddress(rip)} };
+}
+
+json DebugHandler::StepOverPassException(const json& params) {
+    (void)params;
+    uint64_t rip = DebugController::Instance().StepOverPassException();
+    return { {"rip", StringUtils::FormatAddress(rip)} };
+}
+
+json DebugHandler::StepOverSwallowException(const json& params) {
+    (void)params;
+    uint64_t rip = DebugController::Instance().StepOverSwallowException();
+    return { {"rip", StringUtils::FormatAddress(rip)} };
+}
+
+json DebugHandler::StepOutPassException(const json& params) {
+    (void)params;
+    uint64_t rip = DebugController::Instance().StepOutPassException();
+    return { {"rip", StringUtils::FormatAddress(rip)} };
+}
+
+json DebugHandler::StepOutSwallowException(const json& params) {
+    (void)params;
+    uint64_t rip = DebugController::Instance().StepOutSwallowException();
+    return { {"rip", StringUtils::FormatAddress(rip)} };
+}
+
+json DebugHandler::SkipInstruction(const json& params) {
+    (void)params;
+    auto& controller = DebugController::Instance();
+    bool success = controller.SkipInstruction();
+    json result = { {"success", success} };
+    if (controller.IsPaused()) {
+        try { result["rip"] = StringUtils::FormatAddress(controller.GetInstructionPointer()); }
+        catch (...) {}
+    }
     return result;
 }
 

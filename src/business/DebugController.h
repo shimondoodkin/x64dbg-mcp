@@ -44,7 +44,15 @@ public:
      * @brief Continue execution, passing any pending exception to the
      *        debuggee (x64dbg `erun` command).
      */
-    bool RunPassException();
+    bool RunPassException();       // erun
+    bool RunSwallowException();    // serun
+    uint64_t StepIntoPassException();    // esti
+    uint64_t StepIntoSwallowException(); // ssti
+    uint64_t StepOverPassException();    // esto
+    uint64_t StepOverSwallowException(); // ssto
+    uint64_t StepOutPassException();     // ertr
+    uint64_t StepOutSwallowException();  // sertr
+    bool SkipInstruction();              // skip
     
     /**
      * @brief 暂停执行

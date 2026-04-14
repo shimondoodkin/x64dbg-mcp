@@ -181,6 +181,60 @@ bool DebugController::Stop() {
     return ExecuteCommand("stop");
 }
 
+bool DebugController::RunSwallowException() {
+    if (!IsDebugging()) { throw DebuggerNotRunningException(); }
+    Logger::Debug("Executing serun (run + swallow exception)");
+    return ExecuteCommand("serun");
+}
+
+uint64_t DebugController::StepIntoPassException() {
+    if (!IsDebugging()) { throw DebuggerNotRunningException(); }
+    Logger::Debug("Executing esti (step into + pass exception)");
+    ExecuteCommand("esti");
+    return GetInstructionPointer();
+}
+
+uint64_t DebugController::StepIntoSwallowException() {
+    if (!IsDebugging()) { throw DebuggerNotRunningException(); }
+    Logger::Debug("Executing ssti (step into + swallow exception)");
+    ExecuteCommand("ssti");
+    return GetInstructionPointer();
+}
+
+uint64_t DebugController::StepOverPassException() {
+    if (!IsDebugging()) { throw DebuggerNotRunningException(); }
+    Logger::Debug("Executing esto (step over + pass exception)");
+    ExecuteCommand("esto");
+    return GetInstructionPointer();
+}
+
+uint64_t DebugController::StepOverSwallowException() {
+    if (!IsDebugging()) { throw DebuggerNotRunningException(); }
+    Logger::Debug("Executing ssto (step over + swallow exception)");
+    ExecuteCommand("ssto");
+    return GetInstructionPointer();
+}
+
+uint64_t DebugController::StepOutPassException() {
+    if (!IsDebugging()) { throw DebuggerNotRunningException(); }
+    Logger::Debug("Executing ertr (run to return + pass exception)");
+    ExecuteCommand("ertr");
+    return GetInstructionPointer();
+}
+
+uint64_t DebugController::StepOutSwallowException() {
+    if (!IsDebugging()) { throw DebuggerNotRunningException(); }
+    Logger::Debug("Executing sertr (run to return + swallow exception)");
+    ExecuteCommand("sertr");
+    return GetInstructionPointer();
+}
+
+bool DebugController::SkipInstruction() {
+    if (!IsDebugging()) { throw DebuggerNotRunningException(); }
+    Logger::Debug("Executing skip");
+    return ExecuteCommand("skip");
+}
+
 bool DebugController::IsDebugging() const {
     return DbgIsDebugging();
 }
