@@ -122,6 +122,16 @@ The repository also includes a Python client script, `x64dbg-mcp.py`, which curr
 - **Build & release**
   - Added GitHub Actions workflow that builds x64 + x86 plugin DLLs on tag push and publishes them to a GitHub Release
 
+> **Upgrade note — `permissions.allowed_methods` is required.** Older installed
+> `config.json` files (v1.0.3 and earlier) often omit the `permissions.allowed_methods`
+> array entirely. With that key missing, the v1.0.4 `PermissionChecker` treats the
+> allow-list as empty and rejects every JSON-RPC call with `"Method not allowed"`,
+> even though the server connects cleanly. When upgrading, make sure your
+> `plugins/x64dbg-mcp/config.json` (and the `plugins/x32dbg_mcp/config.json` on
+> the 32-bit side) contains an `allowed_methods` list — use the one in
+> [`config.json`](./config.json) at the repo root as a reference, or start with
+> `"allowed_methods": ["*"]` while you validate the install.
+
 ## What's New in v1.0.3
 
 - **Generalized Unpacking (Not UPX-only)**
