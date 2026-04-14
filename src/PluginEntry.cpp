@@ -587,7 +587,10 @@ extern "C" __declspec(dllexport) bool pluginit(PLUG_INITSTRUCT* initStruct) {
         try {
             if (MCP::ConfigManager::Instance().Get<bool>(kAutoStartConfigKey, false)) {
                 _plugin_logputs("[MCP] Auto-start option enabled, starting MCP HTTP Server...");
-                MCP::StartMcpHttpServer(false);
+                if (!MCP::StartMcpHttpServer(false)) {
+                    _plugin_logputs("[MCP] Auto-start failed; server is NOT running. Use the menu to start it manually.");
+                    MCP::Logger::Error("Auto-start of MCP HTTP server failed");
+                }
             }
         } catch (const std::exception& e) {
             MCP::Logger::Error("Failed to auto-start MCP HTTP server: {}", e.what());

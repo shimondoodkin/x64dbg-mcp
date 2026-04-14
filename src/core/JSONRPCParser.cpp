@@ -70,7 +70,13 @@ std::vector<JSONRPCRequest> JSONRPCParser::ParseBatchRequest(const std::string& 
     if (j.empty()) {
         throw InvalidRequestException("Batch request cannot be empty");
     }
-    
+
+    constexpr size_t kMaxBatchSize = 100;
+    if (j.size() > kMaxBatchSize) {
+        throw InvalidRequestException("Batch request exceeds maximum size of " +
+                                      std::to_string(kMaxBatchSize));
+    }
+
     std::vector<JSONRPCRequest> requests;
     for (const auto& item : j) {
         // 递归解析每个请求

@@ -112,6 +112,10 @@ nlohmann::json MemoryHandler::Search(const nlohmann::json& params) {
     if (params.contains("max_results")) {
         maxResults = params["max_results"].get<size_t>();
     }
+    constexpr size_t kHardMaxResults = 100000;
+    if (maxResults == 0 || maxResults > kHardMaxResults) {
+        maxResults = kHardMaxResults;
+    }
     
     // 鎼滅储
     auto& manager = MemoryManager::Instance();

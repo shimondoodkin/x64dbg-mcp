@@ -596,7 +596,8 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket, const std::string& sessionId)
         "Content-Type: text/event-stream; charset=utf-8\r\n"
         "Cache-Control: no-cache\r\n"
         "Connection: keep-alive\r\n"
-        "Access-Control-Allow-Origin: *\r\n"
+        // CORS intentionally not advertised (defends against DNS-rebinding attacks)
+        ""
         "\r\n";
     
     if (!SendAll(clientSocket, headers)) {
@@ -806,10 +807,47 @@ bool MCPHttpServer::ParseJsonRpcRequest(const std::string& rawJson,
 std::string MCPHttpServer::HandleMCPMethod(const std::string& method, const std::string& requestId, const std::string& body) {
     if (method == "initialize") {
         Logger::Info("Handling initialize request");
-        return "{\"jsonrpc\":\"2.0\",\"id\":" + requestId + 
-               ",\"result\":{\"protocolVersion\":\"2024-11-05\","
-               "\"capabilities\":{\"tools\":{}},"
-               "\"serverInfo\":{\"name\":\"x64dbg-mcp\",\"version\":\"1.0.3\"}}}";
+
+        // Echo back the client's requested protocolVersion when it is one we
+        // support; otherwise fall back to the latest version we implement.
+        static const std::array<const char*, 3> kSupportedVersions = {
+            "2025-06-18", "2025-03-26", "2024-11-05"
+        };
+        std::string negotiatedVersion = "2024-11-05";
+        try {
+            const json req = json::parse(body);
+            if (req.is_object() && req.contains("params") && req["params"].is_object()) {
+                const auto& params = req["params"];
+                if (params.contains("protocolVersion") && params["protocolVersion"].is_string()) {
+                    const std::string requested = params["protocolVersion"].get<std::string>();
+                    for (const auto* v : kSupportedVersions) {
+                        if (requested == v) {
+                            negotiatedVersion = requested;
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (const json::exception&) {
+            // Fall through with default version; outer caller already validated body.
+        }
+
+        return json({
+            {"jsonrpc", "2.0"},
+            {"id", requestId == "null" ? nullptr : json::parse(requestId)},
+            {"result", {
+                {"protocolVersion", negotiatedVersion},
+                {"capabilities", {
+                    {"tools", json::object()},
+                    {"resources", json::object()},
+                    {"prompts", json::object()}
+                }},
+                {"serverInfo", {
+                    {"name", "x64dbg-mcp"},
+                    {"version", "1.0.3"}
+                }}
+            }}
+        }).dump();
     }
     else if (method == "notifications/initialized") {
         // 杩欐槸瀹㈡埛绔彂鐨勯€氱煡锛屼笉闇€瑕佸搷搴?
@@ -1174,7 +1212,7 @@ void MCPHttpServer::SendHttpResponse(SOCKET socket, int statusCode,
     response << "HTTP/1.1 " << statusCode << " " << statusText << "\r\n"
              << "Content-Type: " << responseContentType << "\r\n"
              << "Content-Length: " << responseBody.length() << "\r\n"
-             << "Access-Control-Allow-Origin: *\r\n"
+             // CORS intentionally not advertised (defends against DNS-rebinding attacks)
              << "Connection: close\r\n"
              << "\r\n"
              << responseBody;

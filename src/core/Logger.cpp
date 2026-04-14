@@ -2,6 +2,10 @@
 #include <iostream>
 #include <ctime>
 
+#ifdef XDBG_SDK_AVAILABLE
+#include "_plugins.h"
+#endif
+
 namespace MCP {
 
 // 静态成员初始化
@@ -78,11 +82,17 @@ void Logger::Log(LogLevel level, const std::string& message) {
     
     // 输出到控制台
     if (m_consoleOutput) {
+#ifdef XDBG_SDK_AVAILABLE
+        // Plugin runs inside x64dbg.exe; stdout/stderr would corrupt the host
+        // console. Route through the SDK logger so messages land in the log window.
+        _plugin_logputs(logLine.c_str());
+#else
         if (level >= LogLevel::Error) {
             std::cerr << logLine << std::endl;
         } else {
             std::cout << logLine << std::endl;
         }
+#endif
     }
 }
 
