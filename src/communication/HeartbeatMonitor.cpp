@@ -34,9 +34,10 @@ void HeartbeatMonitor::Stop() {
     }
     
     Logger::Info("Stopping HeartbeatMonitor...");
-    
+
     m_running = false;
-    
+    m_wakeCv.notify_all();
+
     if (m_thread.joinable()) {
         m_thread.join();
     }
@@ -48,26 +49,16 @@ void HeartbeatMonitor::MonitorThread() {
     Logger::Debug("Heartbeat monitor thread started");
     
     while (m_running) {
-        // 等待指定间隔
-        auto start = std::chrono::steady_clock::now();
-        
-        while (m_running) {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
-            
-            if (elapsed >= m_intervalSeconds) {
-                break;
-            }
-            
-            // 短暂休眠，避免忙等待
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        {
+            std::unique_lock<std::mutex> lock(m_wakeMutex);
+            m_wakeCv.wait_for(lock, std::chrono::seconds(m_intervalSeconds),
+                              [this] { return !m_running.load(); });
         }
-        
+
         if (!m_running) {
             break;
         }
-        
-        // 发送心跳
+
         SendHeartbeat();
     }
     

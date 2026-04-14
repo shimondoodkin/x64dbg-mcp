@@ -3,6 +3,8 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 
 namespace MCP {
 
@@ -38,6 +40,8 @@ private:
     std::thread m_thread;
     std::atomic<bool> m_running;
     uint32_t m_intervalSeconds;
+    std::mutex m_wakeMutex;
+    std::condition_variable m_wakeCv;
 };
 
 } // namespace MCP

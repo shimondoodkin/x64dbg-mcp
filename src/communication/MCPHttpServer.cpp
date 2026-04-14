@@ -488,6 +488,15 @@ void MCPHttpServer::ServerLoop() {
             {
                 std::lock_guard<std::mutex> sseLock(m_sseClientSocketsMutex);
                 m_sseClientSockets.erase(clientSocket);
+                // Safety-net: if HandleSSE registered a session id but did
+                // not run cleanup (early throw), drop the stale entry.
+                for (auto it = m_sseSessions.begin(); it != m_sseSessions.end(); ) {
+                    if (it->second == clientSocket) {
+                        it = m_sseSessions.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
             }
         });
 
