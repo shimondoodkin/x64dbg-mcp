@@ -185,6 +185,13 @@ void MCPToolRegistry::RegisterDefaultTools() {
     });
     
     RegisterTool({
+        "debug_run_pass_exception",
+        "Continue execution and pass the pending exception to the debuggee (x64dbg `erun`)",
+        "debug.run_pass_exception",
+        {}
+    });
+    
+    RegisterTool({
         "debug_pause",
         "Pause program execution",
         "debug.pause",

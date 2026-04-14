@@ -26,6 +26,11 @@ public:
      * @brief debug.run - 继续执行
      */
     static json Run(const json& params);
+
+    /**
+     * @brief debug.run_pass_exception - continue, passing the pending exception
+     */
+    static json RunPassException(const json& params);
     
     /**
      * @brief debug.pause - 暂停执行

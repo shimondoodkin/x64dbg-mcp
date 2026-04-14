@@ -39,6 +39,12 @@ public:
      * @return 是否成功
      */
     bool Run();
+
+    /**
+     * @brief Continue execution, passing any pending exception to the
+     *        debuggee (x64dbg `erun` command).
+     */
+    bool RunPassException();
     
     /**
      * @brief 暂停执行

@@ -13,6 +13,7 @@ void DebugHandler::RegisterMethods() {
     
     dispatcher.RegisterMethod("debug.get_state", GetState);
     dispatcher.RegisterMethod("debug.run", Run);
+    dispatcher.RegisterMethod("debug.run_pass_exception", RunPassException);
     dispatcher.RegisterMethod("debug.pause", Pause);
     dispatcher.RegisterMethod("debug.step_into", StepInto);
     dispatcher.RegisterMethod("debug.step_over", StepOver);
@@ -73,6 +74,34 @@ json DebugHandler::Run(const json& params) {
         }
     }
     
+    return result;
+}
+
+json DebugHandler::RunPassException(const json& params) {
+    (void)params;
+    auto& controller = DebugController::Instance();
+
+    bool success = controller.RunPassException();
+
+    json result = {
+        {"success", success}
+    };
+
+    // Give the debugger a moment to settle, then report state.
+    Sleep(50);
+
+    DebugState state = controller.GetState();
+    result["state"] = StateToString(state);
+
+    if (controller.IsPaused()) {
+        try {
+            uint64_t rip = controller.GetInstructionPointer();
+            result["rip"] = StringUtils::FormatAddress(rip);
+            result["stop_reason"] = "breakpoint_or_exception";
+        } catch (...) {
+        }
+    }
+
     return result;
 }
 

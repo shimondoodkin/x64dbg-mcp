@@ -41,6 +41,15 @@ bool DebugController::Run() {
     return ExecuteCommand("run");
 }
 
+bool DebugController::RunPassException() {
+    if (!IsDebugging()) {
+        throw DebuggerNotRunningException();
+    }
+
+    Logger::Debug("Executing erun command (run + pass exception)");
+    return ExecuteCommand("erun");
+}
+
 bool DebugController::Pause() {
     if (!IsDebugging()) {
         throw DebuggerNotRunningException();
