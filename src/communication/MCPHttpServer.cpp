@@ -20,6 +20,8 @@
 #include <cctype>
 #include <chrono>
 #include <limits>
+#include <random>
+#include <unordered_map>
 #include <nlohmann/json.hpp>
 
 #pragma comment(lib, "ws2_32.lib")
@@ -30,6 +32,64 @@ namespace {
 
 constexpr size_t kReceiveChunkSize = 4096;
 constexpr size_t kMaxHttpRequestSize = 1024 * 1024;
+
+std::string UrlDecode(const std::string& src) {
+    std::string out;
+    out.reserve(src.size());
+    for (size_t i = 0; i < src.size(); ++i) {
+        char c = src[i];
+        if (c == '+') {
+            out.push_back(' ');
+        } else if (c == '%' && i + 2 < src.size()) {
+            auto hex = [](char ch) -> int {
+                if (ch >= '0' && ch <= '9') return ch - '0';
+                if (ch >= 'a' && ch <= 'f') return 10 + ch - 'a';
+                if (ch >= 'A' && ch <= 'F') return 10 + ch - 'A';
+                return -1;
+            };
+            int hi = hex(src[i + 1]);
+            int lo = hex(src[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                out.push_back(static_cast<char>((hi << 4) | lo));
+                i += 2;
+            } else {
+                out.push_back(c);
+            }
+        } else {
+            out.push_back(c);
+        }
+    }
+    return out;
+}
+
+std::string GetQueryParam(const std::string& query, const std::string& key) {
+    size_t start = 0;
+    while (start <= query.size()) {
+        size_t end = query.find('&', start);
+        if (end == std::string::npos) end = query.size();
+        std::string pair = query.substr(start, end - start);
+        size_t eq = pair.find('=');
+        std::string name = eq == std::string::npos ? pair : pair.substr(0, eq);
+        std::string value = eq == std::string::npos ? std::string() : pair.substr(eq + 1);
+        if (UrlDecode(name) == key) {
+            return UrlDecode(value);
+        }
+        start = end + 1;
+    }
+    return {};
+}
+
+std::string GenerateSessionId() {
+    static thread_local std::mt19937_64 rng{std::random_device{}()};
+    std::uniform_int_distribution<uint64_t> dist;
+    uint64_t a = dist(rng);
+    uint64_t b = dist(rng);
+    char buf[33];
+    std::snprintf(buf, sizeof(buf), "%016llx%016llx",
+                  static_cast<unsigned long long>(a),
+                  static_cast<unsigned long long>(b));
+    return std::string(buf);
+}
 
 std::string ToLowerCopy(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(),
@@ -199,6 +259,7 @@ bool SendAll(SOCKET socket, const std::string& data) {
 const char* GetHttpStatusText(int statusCode) {
     switch (statusCode) {
         case 200: return "OK";
+        case 202: return "Accepted";
         case 204: return "No Content";
         case 400: return "Bad Request";
         case 404: return "Not Found";
@@ -478,7 +539,8 @@ void MCPHttpServer::HandleClient(SOCKET clientSocket) {
     std::string method;
     std::string path;
     std::string body;
-    const bool isSSE = ParseHttpRequest(request, method, path, body) &&
+    std::string query;
+    const bool isSSE = ParseHttpRequest(request, method, path, body, &query) &&
         method == "GET" && path == "/sse";
 
     HandleHttpRequest(clientSocket, request);
@@ -489,9 +551,9 @@ void MCPHttpServer::HandleClient(SOCKET clientSocket) {
 }
 
 void MCPHttpServer::HandleHttpRequest(SOCKET clientSocket, const std::string& request) {
-    std::string method, path, body;
-    
-    if (!ParseHttpRequest(request, method, path, body)) {
+    std::string method, path, body, query;
+
+    if (!ParseHttpRequest(request, method, path, body, &query)) {
         SendHttpResponse(clientSocket, 400, "{\"error\":\"Bad Request\"}");
         return;
     }
@@ -499,11 +561,22 @@ void MCPHttpServer::HandleHttpRequest(SOCKET clientSocket, const std::string& re
     Logger::Debug("HTTP Request: " + method + " " + path);
 
     if (method == "GET" && path == "/sse") {
-        HandleSSE(clientSocket);
+        std::string sessionId = GetQueryParam(query, "sessionId");
+        if (sessionId.empty()) {
+            sessionId = GenerateSessionId();
+        }
+        HandleSSE(clientSocket, sessionId);
+    }
+    else if (method == "POST" && (path == "/messages" || path == "/message")) {
+        std::string sessionId = GetQueryParam(query, "sessionId");
+        if (!sessionId.empty()) {
+            HandlePostMessages(clientSocket, body, sessionId);
+            return;
+        }
+        HandlePostMessage(clientSocket, body);
     }
     else if (method == "POST" &&
-             (path == "/message" || path == "/" || path == "/messages" ||
-              path == "/rpc" || path == "/rpc/")) {
+             (path == "/" || path == "/rpc" || path == "/rpc/")) {
         // 鏀寔澶氱 POST 璺緞锛?, /message, /messages
         HandlePostMessage(clientSocket, body);
     }
@@ -516,7 +589,7 @@ void MCPHttpServer::HandleHttpRequest(SOCKET clientSocket, const std::string& re
     }
 }
 
-void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
+void MCPHttpServer::HandleSSE(SOCKET clientSocket, const std::string& sessionId) {
     // 鍙戦€?SSE 鍝嶅簲澶?
     std::string headers = 
         "HTTP/1.1 200 OK\r\n"
@@ -535,9 +608,25 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
     {
         std::lock_guard<std::mutex> lock(m_sseClientSocketsMutex);
         m_sseClientSockets.insert(clientSocket);
+        m_sseSessions[sessionId] = clientSocket;
     }
 
-    Logger::Info("SSE connection established, waiting for client messages...");
+    // Per MCP HTTP+SSE spec: emit `endpoint` event telling the client where to POST.
+    std::string endpointData = "/messages?sessionId=" + sessionId;
+    {
+        std::lock_guard<std::mutex> lock(m_sseSendMutex);
+        std::string ev = "event: endpoint\r\ndata: " + endpointData + "\r\n\r\n";
+        if (!SendAll(clientSocket, ev)) {
+            Logger::Error("Failed to send SSE endpoint event");
+            std::lock_guard<std::mutex> slock(m_sseClientSocketsMutex);
+            m_sseClientSockets.erase(clientSocket);
+            m_sseSessions.erase(sessionId);
+            closesocket(clientSocket);
+            return;
+        }
+    }
+
+    Logger::Info("SSE connection established, sessionId={}", sessionId);
 
     // 璁剧疆 socket 涓洪潪闃诲妯″紡
     u_long mode = 1;
@@ -545,89 +634,31 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
 
     // 璇诲彇瀹㈡埛绔彂閫佺殑娑堟伅锛堟湁浜?MCP 瀹㈡埛绔€氳繃 SSE 杩炴帴鍙戦€佽姹傦級
     char buffer[4096];
-    std::string accumulated;
     int heartbeatCounter = 0;
-    
+
     while (m_running) {
-        int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-        
-        if (bytesReceived > 0) {
-            buffer[bytesReceived] = '\0';
-            accumulated += buffer;
-            
-            // 鏌ユ壘瀹屾暣鐨?JSON 娑堟伅锛堟寜琛屽垎闅旓級
-            size_t pos;
-            while ((pos = accumulated.find('\n')) != std::string::npos) {
-                std::string line = accumulated.substr(0, pos);
-                accumulated = accumulated.substr(pos + 1);
-                
-                // 璺宠繃绌鸿
-                if (line.empty() || line == "\r") continue;
-                
-                Logger::Debug("SSE received: " + line);
-                
-                // 瑙ｆ瀽骞跺鐞?JSON-RPC 璇锋眰
-                std::string method, requestId;
-                bool hasRequestId = false;
-                if (ParseJsonRpcRequest(line, method, requestId, hasRequestId)) {
-                    std::string response = HandleMCPMethod(method, requestId, line);
-                    if (hasRequestId && !response.empty()) {
-                        SendSSEEvent(clientSocket, "message", response);
-                    }
-                } else {
-                    json errorResponse;
-                    try {
-                        const json requestJson = json::parse(line);
-                        json idValue = nullptr;
-                        if (requestJson.is_object() && requestJson.contains("id")) {
-                            const auto& id = requestJson["id"];
-                            if (id.is_null() || id.is_string() || id.is_number_integer()) {
-                                idValue = id;
-                            }
-                        }
-
-                        errorResponse = {
-                            {"jsonrpc", "2.0"},
-                            {"id", idValue},
-                            {"error", {
-                                {"code", -32600},
-                                {"message", "Invalid Request"}
-                            }}
-                        };
-                    } catch (const json::exception&) {
-                        errorResponse = {
-                            {"jsonrpc", "2.0"},
-                            {"id", nullptr},
-                            {"error", {
-                                {"code", -32700},
-                                {"message", "Parse error"}
-                            }}
-                        };
-                    }
-
-                    SendSSEEvent(clientSocket, "message", errorResponse.dump());
-                }
-            }
-        } else if (bytesReceived == 0) {
-            // 瀹㈡埛绔甯稿叧闂?
+        // MCP clients do not write JSON-RPC over the SSE GET socket;
+        // we only use recv() to detect disconnect.
+        int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+        if (bytesReceived == 0) {
             Logger::Debug("SSE client disconnected");
             break;
-        } else {
-            // WSAEWOULDBLOCK 琛ㄧず娌℃湁鏁版嵁鍙锛岃繖鏄甯哥殑
+        }
+        if (bytesReceived < 0) {
             int error = WSAGetLastError();
             if (error != WSAEWOULDBLOCK) {
                 Logger::Error("SSE recv error: " + std::to_string(error));
                 break;
             }
         }
-        
-        // 姣?15 绉掑彂閫佷竴娆″績璺筹紙淇濇寔杩炴帴娲昏穬锛?
-        if (++heartbeatCounter >= 150) {  // 150 * 100ms = 15s
-            SendSSEEvent(clientSocket, "ping", "{}");
+
+        if (++heartbeatCounter >= 150) { // 150 * 100ms = 15s
+            if (!SendSSEEvent(clientSocket, "ping", "{}")) {
+                break;
+            }
             heartbeatCounter = 0;
         }
-        
-        // 鐭殏浼戠湢閬垮厤 CPU 鍗犵敤杩囬珮
+
         Sleep(100);
     }
     
@@ -636,8 +667,58 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
     {
         std::lock_guard<std::mutex> lock(m_sseClientSocketsMutex);
         m_sseClientSockets.erase(clientSocket);
+        auto it = m_sseSessions.find(sessionId);
+        if (it != m_sseSessions.end() && it->second == clientSocket) {
+            m_sseSessions.erase(it);
+        }
     }
     closesocket(clientSocket);
+}
+
+void MCPHttpServer::HandlePostMessages(SOCKET clientSocket, const std::string& body, const std::string& sessionId) {
+    Logger::Debug("POST /messages sessionId=" + sessionId + " body=" + body);
+
+    SOCKET sseSocket = INVALID_SOCKET;
+    {
+        std::lock_guard<std::mutex> lock(m_sseClientSocketsMutex);
+        auto it = m_sseSessions.find(sessionId);
+        if (it != m_sseSessions.end()) {
+            sseSocket = it->second;
+        }
+    }
+
+    if (sseSocket == INVALID_SOCKET) {
+        SendHttpResponse(clientSocket, 404,
+            "{\"error\":\"Unknown or expired sessionId\"}");
+        return;
+    }
+
+    try {
+        [[maybe_unused]] const auto parsed = json::parse(body);
+    } catch (const json::exception&) {
+        SendHttpResponse(clientSocket, 400,
+            "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}");
+        return;
+    }
+
+    std::string method, requestId;
+    bool hasRequestId = false;
+    if (!ParseJsonRpcRequest(body, method, requestId, hasRequestId)) {
+        SendHttpResponse(clientSocket, 400,
+            "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"Invalid Request\"}}");
+        return;
+    }
+
+    // Per MCP HTTP+SSE spec: acknowledge the POST with 202 Accepted immediately;
+    // the actual JSON-RPC response (if any) is delivered via the SSE stream.
+    SendHttpResponse(clientSocket, 202, "");
+
+    std::string response = HandleMCPMethod(method, requestId, body);
+    if (hasRequestId && !response.empty()) {
+        if (!SendSSEEvent(sseSocket, "message", response)) {
+            Logger::Error("Failed to route response over SSE for session " + sessionId);
+        }
+    }
 }
 
 void MCPHttpServer::HandlePostMessage(SOCKET clientSocket, const std::string& body) {
@@ -1040,25 +1121,31 @@ std::string MCPHttpServer::HandleMCPMethod(const std::string& method, const std:
     }
 }
 
-bool MCPHttpServer::ParseHttpRequest(const std::string& request, 
-                                     std::string& method, 
-                                     std::string& path, 
-                                     std::string& body) {
+bool MCPHttpServer::ParseHttpRequest(const std::string& request,
+                                     std::string& method,
+                                     std::string& path,
+                                     std::string& body,
+                                     std::string* outQuery) {
     // 瑙ｆ瀽璇锋眰琛?
     size_t firstSpace = request.find(' ');
     if (firstSpace == std::string::npos) return false;
-    
+
     method = request.substr(0, firstSpace);
-    
+
     size_t secondSpace = request.find(' ', firstSpace + 1);
     if (secondSpace == std::string::npos) return false;
-    
+
     path = request.substr(firstSpace + 1, secondSpace - firstSpace - 1);
 
     // Normalize route path by dropping query parameters.
     const size_t queryPos = path.find('?');
     if (queryPos != std::string::npos) {
+        if (outQuery) {
+            *outQuery = path.substr(queryPos + 1);
+        }
         path = path.substr(0, queryPos);
+    } else if (outQuery) {
+        outQuery->clear();
     }
     
     // 鎻愬彇 body锛堝湪 \r\n\r\n 涔嬪悗锛?

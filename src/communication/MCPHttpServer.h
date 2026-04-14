@@ -16,6 +16,7 @@
 #include <functional>
 #include <vector>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 #include <winsock2.h>
 #include <nlohmann/json_fwd.hpp>
@@ -65,10 +66,13 @@ private:
     void HandleHttpRequest(SOCKET clientSocket, const std::string& request);
     
     // 处理 SSE 连接
-    void HandleSSE(SOCKET clientSocket);
-    
-    // 处理 POST 消息
+    void HandleSSE(SOCKET clientSocket, const std::string& sessionId);
+
+    // 处理 POST 消息（旧式 JSON-RPC over HTTP，用于 Python 客户端）
     void HandlePostMessage(SOCKET clientSocket, const std::string& body);
+
+    // 处理 POST /messages?sessionId=...（标准 MCP HTTP+SSE 传输层）
+    void HandlePostMessages(SOCKET clientSocket, const std::string& body, const std::string& sessionId);
     
     // 处理 MCP 方法调用
     std::string HandleMCPMethod(const std::string& method, const std::string& requestId, const std::string& body);
@@ -80,8 +84,9 @@ private:
     MCPToolCallResult CallMCPTool(const std::string& toolName, const nlohmann::json& arguments);
     
     // 解析 HTTP 请求
-    bool ParseHttpRequest(const std::string& request, std::string& method, 
-                         std::string& path, std::string& body);
+    bool ParseHttpRequest(const std::string& request, std::string& method,
+                         std::string& path, std::string& body,
+                         std::string* outQuery = nullptr);
     
     // 发送 HTTP 响应
     void SendHttpResponse(SOCKET socket, int statusCode, const std::string& body,
@@ -102,6 +107,7 @@ private:
     std::unordered_set<SOCKET> m_activeClientSockets;
     std::mutex m_activeClientSocketsMutex;
     std::unordered_set<SOCKET> m_sseClientSockets;
+    std::unordered_map<std::string, SOCKET> m_sseSessions;
     std::mutex m_sseClientSocketsMutex;
     std::mutex m_sseSendMutex;
     std::atomic<int> m_requestId;
