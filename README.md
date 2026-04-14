@@ -96,6 +96,19 @@ The repository also includes a Python client script, `x64dbg-mcp.py`, which curr
 
 ## What's New in v1.0.4
 
+> ### Major security fixup — upgrade strongly recommended
+>
+> This release is primarily a **security hardening release**. Previous versions
+> shipped a localhost HTTP/JSON-RPC debugger server with wildcard CORS, no input
+> caps on memory reads or batched requests, raw `stoull`/`stoi` on untrusted
+> address and hex inputs, and a method-level allowlist whose fallback in v1.0.3
+> silently denied every call when the config was incomplete. A malicious page
+> in a browser on the same machine could potentially have reached the debugger
+> via DNS-rebinding, and malformed input could produce confusing errors that
+> masked the real surface. v1.0.4 removes or bounds every one of these.
+>
+> **If you are running any earlier v1.0.x build, upgrade.**
+
 - **Fixed MCP HTTP+SSE transport (clients can finally connect)**
   - Server now sends the required `endpoint` SSE event on `GET /sse` and tracks per-connection `sessionId`
   - Standard `POST /messages?sessionId=...` route added; replies are routed back over the matching SSE stream as `202 Accepted` + SSE message
