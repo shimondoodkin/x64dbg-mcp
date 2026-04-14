@@ -94,6 +94,34 @@ The repository also includes a Python client script, `x64dbg-mcp.py`, which curr
   - prefers plugin-native MCP methods when available
   - falls back to script execution only for selected operations where that behavior is intentionally preserved
 
+## What's New in v1.0.4
+
+- **Fixed MCP HTTP+SSE transport (clients can finally connect)**
+  - Server now sends the required `endpoint` SSE event on `GET /sse` and tracks per-connection `sessionId`
+  - Standard `POST /messages?sessionId=...` route added; replies are routed back over the matching SSE stream as `202 Accepted` + SSE message
+  - Removed the broken "read JSON-RPC off the SSE GET socket" loop
+  - Legacy `POST /rpc` retained for the bundled Python client
+
+- **Protocol negotiation & MCP spec compliance**
+  - `initialize` now negotiates `protocolVersion` (`2024-11-05`, `2025-03-26`, `2025-06-18`) and advertises `tools` + `resources` + `prompts` capabilities
+  - `tools/list` honors `params.cursor` and emits `nextCursor` for pagination (200 tools per page)
+
+- **Security hardening**
+  - Removed `Access-Control-Allow-Origin: *` from HTTP and SSE responses (defense against DNS-rebinding attacks against the localhost debugger)
+  - `memory.search` `max_results` capped at 100 000
+  - JSON-RPC batch requests capped at 100 entries (memory-amplification defense)
+  - `StringUtils::ParseAddress` and `HexToBytes` now reject malformed input with clear error messages instead of bubbling raw `stoull` / `stoi` exceptions
+
+- **Reliability & cleanup**
+  - `HeartbeatMonitor` replaces 100 ms polling sleep with a `condition_variable` — `Stop()` is now instantaneous
+  - Per-client worker has a safety-net cleanup of `m_sseSessions` so a stale `sessionId → dead-socket` entry can't leak
+  - Plugin Logger routes through `_plugin_logputs` instead of `std::cout`/`cerr`, so log output no longer corrupts the x64dbg host console
+  - Auto-start failures are now logged explicitly instead of being silently dropped
+  - About-menu fixed-size `sprintf_s` buffer replaced with `std::string`
+
+- **Build & release**
+  - Added GitHub Actions workflow that builds x64 + x86 plugin DLLs on tag push and publishes them to a GitHub Release
+
 ## What's New in v1.0.3
 
 - **Generalized Unpacking (Not UPX-only)**
